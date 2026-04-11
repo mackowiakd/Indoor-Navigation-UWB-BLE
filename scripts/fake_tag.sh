@@ -5,6 +5,7 @@ echo "Aby przerwać, wciśnij CTRL+C"
 
 # Upewnij się, że radio jest włączone
 bluetoothctl power on > /dev/null
+bluetoothctl system-alias "TEST_TAG_312" > /dev/null
 
 while true
 do
