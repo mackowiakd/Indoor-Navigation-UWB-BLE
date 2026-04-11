@@ -1,103 +1,112 @@
 #include <Arduino.h>
-#include <NimBLEDevice.h>
-#include <Adafruit_NeoPixel.h>
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+#include <BLEScan.h>
 
-// --- HARDWARE CONFIGURATION ---
-#define LED_PIN     3      // GPIO pin for NeoPixel (D1 on XIAO)
-#define LED_COUNT   1      // Number of LEDs
-#define BRIGHTNESS  100     // LED Brightness (0-255)
+// --- KONFIGURACJA SERWERA ---
+#define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 
-// --- BLE CONFIGURATION (UUIDs) ---
-// Target service and characteristic UUIDs for the PoC
-#define SERVICE_UUID        "12345678-1234-1234-1234-123456789012"
-#define CHARACTERISTIC_UUID "87654321-4321-4321-4321-210987654321"
-
-// LED Strip initialization
-Adafruit_NeoPixel pixels(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+BLEServer* pServer = NULL;
+BLECharacteristic* pCharacteristic = NULL;
 bool deviceConnected = false;
+bool oldDeviceConnected = false;
 
-// 1. Server Callbacks (Connection management)
-class MyServerCallbacks: public NimBLEServerCallbacks {
-    void onConnect(NimBLEServer* pServer) {
-        deviceConnected = true;
-        Serial.println("[*] Client connected. Device is vulnerable.");
-    };
+// --- KONFIGURACJA SKANERA ---
+int scanTime = 2; // Czas pojedynczego skanu w sekundach
+BLEScan* pBLEScan;
 
-    void onDisconnect(NimBLEServer* pServer) {
-        deviceConnected = false;
-        Serial.println("[*] Client disconnected.");
-        // Crucial: Restart advertising so the device can be exploited again
-        NimBLEDevice::startAdvertising(); 
-        Serial.println("[*] Restarting advertising...");
-    }
+// --- SYMULATOR UWB ---
+String get_simulated_uwb_data() {
+    float distA1 = 2.10 + (sin(millis() / 1000.0) * 0.1); 
+    char dist_str[32];
+    sprintf(dist_str, "A1:%3.2f", distA1);
+    return String(dist_str);
+}
+
+// --- CALLBACKI SERWERA ---
+class MyServerCallbacks: public BLEServerCallbacks {
+    void onConnect(BLEServer* pServer) { deviceConnected = true; Serial.println(">>> TELEFON POŁĄCZONY Z SERWEREM! <<<"); };
+    void onDisconnect(BLEServer* pServer) { deviceConnected = false; Serial.println(">>> TELEFON ODŁĄCZONY! <<<"); }
 };
 
-// 2. Characteristic Callbacks (Payload execution)
-class MyCallbacks: public NimBLECharacteristicCallbacks {
-    void onWrite(NimBLECharacteristic *pCharacteristic) {
-        std::string value = pCharacteristic->getValue();
-
-        // Expecting a 3-byte payload (R, G, B)
-        if (value.length() >= 3) {
-            uint8_t r = value[0];
-            uint8_t g = value[1];
-            uint8_t b = value[2];
-            
-            Serial.printf("[+] COMMAND RECEIVED: R=%d, G=%d, B=%d\n", r, g, b);
-            
-            // Execute the unauthorized payload
-            pixels.setPixelColor(0, pixels.Color(r, g, b));
-            pixels.show();
-        } else {
-            Serial.println("[-] Error: Invalid payload length.");
+// --- CALLBACKI SKANERA (Co się dzieje, gdy ESP coś usłyszy) ---
+class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
+    void onResult(BLEAdvertisedDevice advertisedDevice) {
+        // Tu filtrujemy! Zamiast śmiecić konsolę wszystkim, wypiszmy to, co ma nazwę lub silny sygnał
+        if (advertisedDevice.haveName()) {
+            Serial.printf("Znalaziono TAG: %s | MAC: %s | RSSI: %d dBm \n", 
+                          advertisedDevice.getName().c_str(), 
+                          advertisedDevice.getAddress().toString().c_str(), 
+                          advertisedDevice.getRSSI());
         }
     }
 };
 
 void setup() {
-  Serial.begin(115200);
-  delay(2000);
-  
-  // --- LED INITIALIZATION ---
-  pixels.begin();
-  pixels.show(); 
-  pixels.setBrightness(BRIGHTNESS);
-  Serial.println("[*] Hardware initialized.");
-  
-  // --- BLE VULNERABLE SERVER SETUP ---
-  NimBLEDevice::init("XIAO_Vulnerable_LED"); 
-  
-  NimBLEServer *pServer = NimBLEDevice::createServer();
-  pServer->setCallbacks(new MyServerCallbacks());
+    Serial.begin(115200);
+    delay(2000);
+    Serial.println("Startowanie systemu Multiplexing BLE...");
 
-  NimBLEService *pService = pServer->createService(SERVICE_UUID);
+    BLEDevice::init("XIAO_UWB_Combo");
 
-  // VULNERABILITY:
-  // Read/Write properties are enabled, but NO encryption or authentication is required.
-  // Missing NIMBLE_PROPERTY::WRITE_ENC / READ_ENC flags.
-  NimBLECharacteristic *pCharacteristic = pService->createCharacteristic(
-                                         CHARACTERISTIC_UUID,
-                                         NIMBLE_PROPERTY::READ |
-                                         NIMBLE_PROPERTY::WRITE |
-                                         NIMBLE_PROPERTY::WRITE_NR // Write No Response (faster exploit)
-                                       );
+    // 1. INICJALIZACJA SERWERA (Nadawanie do telefonu)
+    pServer = BLEDevice::createServer();
+    pServer->setCallbacks(new MyServerCallbacks());
+    BLEService *pService = pServer->createService(SERVICE_UUID);
+    pCharacteristic = pService->createCharacteristic(
+                        CHARACTERISTIC_UUID,
+                        BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY
+                      );
+    pCharacteristic->addDescriptor(new BLE2902());
+    pService->start();
+    BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+    pAdvertising->addServiceUUID(SERVICE_UUID);
+    BLEDevice::startAdvertising();
 
-  pCharacteristic->setCallbacks(new MyCallbacks());
-  pService->start();
-  
-  NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
-  pAdvertising->addServiceUUID(SERVICE_UUID);
-  pAdvertising->setScanResponse(true);
-  pAdvertising->start();
-  
-  Serial.println("[*] BLE Server running. Awaiting connections...");
-  
-  // Set to idle color (Blue) indicating it's ready
-  pixels.setPixelColor(0, pixels.Color(0, 0, 255));
-  pixels.show();
+    // 2. INICJALIZACJA SKANERA (Nasłuchiwanie tagów)
+    pBLEScan = BLEDevice::getScan(); 
+    pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks(), true);
+    pBLEScan->setActiveScan(true); // Aktywne skanowanie wyciąga więcej danych (np. nazwy) z tagów
+    pBLEScan->setInterval(100);    // Czas całego cyklu (w ms)
+    pBLEScan->setWindow(50);       // ZMIANA: Skan tylko przez 50 ms (50% czasu)
+    
+    Serial.println("System gotowy. Rozpoczynam pętlę...");
 }
 
 void loop() {
-  // Everything is handled asynchronously by NimBLE callbacks
-  delay(2000);
+    // --- SEKCJA 1: Obsługa Serwera (Wysyłanie danych) ---
+    if (deviceConnected) {
+        String uwb_data = get_simulated_uwb_data();
+        pCharacteristic->setValue(uwb_data.c_str());
+        pCharacteristic->notify();
+        // Nie sypiemy tym na Serial, żeby nie zasłaniać skanera, 
+        // ale w nRF Connect zobaczysz, że to płynie płynnie!
+    }
+
+    // --- SEKCJA 2: Obsługa Skanera (Nasłuchiwanie) ---
+    Serial.println("--- Uruchamiam okno skanowania (2s) ---");
+    
+    // Uruchom skanowanie (to zablokuje pętlę loop na 2 sekundy)
+    // UWAGA: Radio ESP pod spodem i tak wyśle pakiety Notify z Sekcji 1, jeśli trzeba!
+    BLEScanResults foundDevices = pBLEScan->start(scanTime, false);
+    
+    Serial.printf("Zakończono skan okna. Znaleziono %d urządzeń w okolicy.\n\n", foundDevices.getCount());
+    
+    // ZWOLNIENIE PAMIĘCI! Bez tego ESP szybko zresetuje się z braku RAMu
+    pBLEScan->clearResults();   
+
+    // --- SEKCJA 3: Rekonekcja ---
+    if (!deviceConnected && oldDeviceConnected) {
+        delay(500); 
+        pServer->startAdvertising(); 
+        oldDeviceConnected = deviceConnected;
+    }
+    if (deviceConnected && !oldDeviceConnected) {
+        oldDeviceConnected = deviceConnected;
+    }
+
+    delay(400); // Krótki oddech dla procesora
 }
