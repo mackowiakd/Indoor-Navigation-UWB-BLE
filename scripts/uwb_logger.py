@@ -43,17 +43,29 @@ async def main():
     # POPRAWKA: Zmiana logger.info na print
     print(f"[+] Target found: {device.name} [{device.address}]. Establishing connection...")
 
-    async with BleakClient(device) as client:
-        print("Połączono! Subskrybowanie danych...")
-        await client.start_notify(CHAR_UUID, notification_handler)
-        
-        # Trzymaj połączenie przez 60 sekund (zmień według potrzeb)
-        test_duration = 60
-        print(f"Test potrwa {test_duration} sekund...\n")
-        await asyncio.sleep(test_duration)
-        
-        await client.stop_notify(CHAR_UUID)
-        print("Koniec testu. Zapisuję do pliku CSV...")
+   MAX_RETRIES = 5
+    for attempt in range(MAX_RETRIES):
+        try:
+            async with BleakClient(device, timeout=10.0) as client:
+                print(">>> POŁĄCZONO SUKCESEM! Subskrybowanie danych... <<<")
+                await client.start_notify(CHAR_UUID, notification_handler)
+                
+                test_duration = 60
+                print(f"Test potrwa {test_duration} sekund...\n")
+                await asyncio.sleep(test_duration)
+                
+                await client.stop_notify(CHAR_UUID)
+                print("Koniec testu. Zapisuję do pliku CSV...")
+                break # Jeśli doszliśmy tutaj, przerywamy pętlę prób (sukces!)
+
+        except Exception as e:
+            print(f"[!] Błąd połączenia: {e}")
+            if attempt < MAX_RETRIES - 1:
+                print(f"--- Ponawiam próbę ({attempt+2}/{MAX_RETRIES}) za 2 sekundy... ---")
+                await asyncio.sleep(2)
+            else:
+                print("--- Osiągnięto limit prób. Test przerwany. ---")
+                return 
 
     # Zapis logów do pliku
     with open(LOG_FILE, mode='w', newline='') as file:
