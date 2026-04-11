@@ -1,0 +1,69 @@
+# ==========================================
+# 1. LOGI I DANE TESTOWE (Bardzo ważne!)
+# ==========================================
+*.log
+*.csv
+log_uwb.csv
+test_results/
+
+# ==========================================
+# 2. PYTHON (Skrypty do testowania na Ubuntu)
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+# Środowiska wirtualne
+venv/
+env/
+.venv/
+.env
+
+# ==========================================
+# 3. C++ / ESP32 (Środowisko Arduino / PlatformIO)
+# ==========================================
+# Ignoruj pliki binarne i foldery budowania
+.pio/
+build/
+*.bin
+*.elf
+*.hex
+*.a
+*.o
+*.obj
+# Ignoruj specyficzne pliki konfiguracyjne, które mogą zawierać np. Twoje hasło do WiFi
+secrets.h
+config.h
+
+# ==========================================
+# 4. ANDROID STUDIO / KOTLIN (Dla aplikacji mobilnej)
+# ==========================================
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build/
+/app/build/
+/captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.jks
+*.keystore
+
+# ==========================================
+# 5. PLIKI SYSTEMOWE I IDE
+# ==========================================
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+# IDE (VS Code, CLion, itp.)
+.vscode/
+.idea/
+*.swp
