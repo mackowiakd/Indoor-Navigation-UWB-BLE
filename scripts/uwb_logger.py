@@ -2,6 +2,7 @@
 import time
 import csv
 from bleak import BleakScanner, BleakClient
+from bleak.exc import BleakError
 
 # Konfiguracja
 DEVICE_MAC = "98:3D:AE:AC:4D:B2"
@@ -29,12 +30,18 @@ def notification_handler(sender, data):
 
 async def main():
     print(f"Szukam urządzenia: {DEVICE_MAC}...")
-    device = await BleakScanner.find_device_by_address(DEVICE_MAC, timeout=10.0)
+    
+    device = await BleakScanner.find_device_by_filter(
+            lambda d, ad: d.address.upper() == DEVICE_MAC.upper(),
+            timeout=20.0
+        )
+
     if not device:
-        print("Nie znaleziono urządzenia! Upewnij się, że ESP32 działa.")
+        print("[-] Target not found in the vicinity. Upewnij się, że ESP leży blisko!")
         return
 
-    print(f"Znaleziono {DEVICE_NAME} ({device.address}). Łączenie...")
+    # POPRAWKA: Zmiana logger.info na print
+    print(f"[+] Target found: {device.name} [{device.address}]. Establishing connection...")
 
     async with BleakClient(device) as client:
         print("Połączono! Subskrybowanie danych...")
