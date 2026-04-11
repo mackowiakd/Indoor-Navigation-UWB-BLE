@@ -4,7 +4,7 @@ import csv
 from bleak import BleakScanner, BleakClient
 
 # Konfiguracja
-DEVICE_NAME = "XIAO_UWB_Combo"
+DEVICE_MAC = "98:3D:AE:AC:4D:B2"
 CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 LOG_FILE = "log_uwb.csv"
 
@@ -28,11 +28,8 @@ def notification_handler(sender, data):
     log_data.append([current_time, delta, decoded_data])
 
 async def main():
-    print(f"Szukam urządzenia: {DEVICE_NAME}...")
-    device = await BleakScanner.find_device_by_filter(
-        lambda d, ad: d.name and d.name == DEVICE_NAME
-    )
-
+    print(f"Szukam urządzenia: {DEVICE_MAC}...")
+    device = await BleakScanner.find_device_by_address(DEVICE_MAC, timeout=10.0)
     if not device:
         print("Nie znaleziono urządzenia! Upewnij się, że ESP32 działa.")
         return
