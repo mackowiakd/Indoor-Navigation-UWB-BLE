@@ -71,33 +71,31 @@ void setup() {
     pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks(), true);
     pBLEScan->setActiveScan(true); // Aktywne skanowanie wyciąga więcej danych (np. nazwy) z tagów
     pBLEScan->setInterval(100);    // Czas całego cyklu (w ms)
-    pBLEScan->setWindow(50);       // ZMIANA: Skan tylko przez 50 ms (50% czasu)
+    pBLEScan->setWindow(70);       // ZMIANA: Skan tylko przez 50 ms (50% czasu)
     
     Serial.println("System gotowy. Rozpoczynam pętlę...");
 }
 
 void loop() {
-    // --- SEKCJA 1: Obsługa Serwera (Wysyłanie danych) ---
+    // --- STAN 1: TELEFON JEST PODŁĄCZONY ---
     if (deviceConnected) {
+        // 1. Wyślij aktualne odległości (UWB) do telefonu
         String uwb_data = get_simulated_uwb_data();
         pCharacteristic->setValue(uwb_data.c_str());
         pCharacteristic->notify();
-        // Nie sypiemy tym na Serial, żeby nie zasłaniać skanera, 
-        // ale w nRF Connect zobaczysz, że to płynie płynnie!
+        
+        // 2. Wykonaj skan otoczenia w poszukiwaniu tagów (Mikronawigacja)
+        Serial.println("--- Skanowanie otoczenia (2s) ---");
+        BLEScanResults foundDevices = pBLEScan->start(scanTime, false);
+        Serial.printf("Zakończono skan. Znaleziono %d urządzeń w okolicy.\n\n", foundDevices.getCount());
+        pBLEScan->clearResults(); // Bardzo ważne zwalnianie pamięci!
+    } 
+    // --- STAN 2: TELEFON NIE JEST PODŁĄCZONY ---
+    else {
+        // Zamiast skanować, dajemy radiu 100% czasu na "krzyczenie" (Advertising).
+        // Dzięki temu urządzenie łączy się błyskawicznie i nie znika z eteru!
+        delay(200); 
     }
-
-    // --- SEKCJA 2: Obsługa Skanera (Nasłuchiwanie) ---
-    Serial.println("--- Uruchamiam okno skanowania (2s) ---");
-    
-    // Uruchom skanowanie (to zablokuje pętlę loop na 2 sekundy)
-    // UWAGA: Radio ESP pod spodem i tak wyśle pakiety Notify z Sekcji 1, jeśli trzeba!
-    BLEScanResults foundDevices = pBLEScan->start(scanTime, false);
-    
-    Serial.printf("Zakończono skan okna. Znaleziono %d urządzeń w okolicy.\n\n", foundDevices.getCount());
-    
-    // ZWOLNIENIE PAMIĘCI! Bez tego ESP szybko zresetuje się z braku RAMu
-    pBLEScan->clearResults();   
-
     // --- SEKCJA 3: Rekonekcja ---
     if (!deviceConnected && oldDeviceConnected) {
         delay(500); 
