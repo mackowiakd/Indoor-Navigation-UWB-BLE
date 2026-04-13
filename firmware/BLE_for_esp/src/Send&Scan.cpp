@@ -18,6 +18,10 @@ bool oldDeviceConnected = false;
 int scanTime = 2; // Czas pojedynczego skanu w sekundach
 BLEScan* pBLEScan;
 
+// --- UCHWYTY ZADAŃ (FreeRTOS) ---
+TaskHandle_t TaskNotifyHandle;
+TaskHandle_t TaskScanHandle;
+
 // --- SYMULATOR UWB ---
 String get_simulated_uwb_data() {
     float distA1 = 2.10 + (sin(millis() / 1000.0) * 0.1); 
@@ -44,7 +48,41 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
         }
     }
 };
-
+// ==============================================================
+// ZADANIE 1: Szybkie wysyłanie UWB (10 razy na sekundę)
+// ==============================================================
+void TaskNotify(void *pvParameters) {
+    for (;;) { // Nieskończona pętla zadania
+        if (deviceConnected) {
+            String uwb_data = get_simulated_uwb_data();
+            pCharacteristic->setValue(uwb_data.c_str());
+            pCharacteristic->notify();
+        }
+        // Uśpij ten wątek na 100ms (10Hz). 
+        // W tym czasie system oddaje zasoby procesora Skanerowi!
+        vTaskDelay(100 / portTICK_PERIOD_MS); 
+    }
+}
+// ==============================================================
+// ZADANIE 2: Powolne skanowanie tagów w tle
+// ==============================================================
+void TaskScan(void *pvParameters) {
+    for (;;) { // Nieskończona pętla zadania
+        if (deviceConnected) {
+            Serial.println("--- Rozpoczynam skan (2s) w tle ---");
+            // To zablokuje tylko TEN wątek, TaskNotify wciąż działa!
+            BLEScanResults foundDevices = pBLEScan->start(scanTime, false);
+            Serial.printf("Zakończono skan. Znaleziono %d tagów.\n", foundDevices.getCount());
+            pBLEScan->clearResults();
+            
+            // Dajmy radiu ułamek sekundy oddechu po skanie
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+        } else {
+            // Jeśli nie ma telefonu, uśpij zadanie, nie marnuj prądu
+            vTaskDelay(500 / portTICK_PERIOD_MS);
+        }
+    }
+}
 void setup() {
     Serial.begin(115200);
     delay(2000);
@@ -73,30 +111,18 @@ void setup() {
     pBLEScan->setInterval(100);    // Czas całego cyklu (w ms)
     pBLEScan->setWindow(70);       // ZMIANA: Skan tylko przez 50 ms (50% czasu)
     
-    Serial.println("System gotowy. Rozpoczynam pętlę...");
+    // 3. URUCHOMIENIE ZADAŃ FreeRTOS
+    // Przypisujemy nasze funkcje do dwóch niezależnych wątków w systemie
+    xTaskCreate(TaskNotify, "Notify_Task", 4096, NULL, 1, &TaskNotifyHandle);
+    xTaskCreate(TaskScan,   "Scan_Task",   4096, NULL, 1, &TaskScanHandle);
+
+    Serial.println("System i watki gotowy czekam na polaczenie...");
 }
 
 void loop() {
-    // --- STAN 1: TELEFON JEST PODŁĄCZONY ---
-    if (deviceConnected) {
-        // 1. Wyślij aktualne odległości (UWB) do telefonu
-        String uwb_data = get_simulated_uwb_data();
-        pCharacteristic->setValue(uwb_data.c_str());
-        pCharacteristic->notify();
-        
-        // 2. Wykonaj skan otoczenia w poszukiwaniu tagów (Mikronawigacja)
-        Serial.println("--- Skanowanie otoczenia (2s) ---");
-        BLEScanResults foundDevices = pBLEScan->start(scanTime, false);
-        Serial.printf("Zakończono skan. Znaleziono %d urządzeń w okolicy.\n\n", foundDevices.getCount());
-        pBLEScan->clearResults(); // Bardzo ważne zwalnianie pamięci!
-    } 
-    // --- STAN 2: TELEFON NIE JEST PODŁĄCZONY ---
-    else {
-        // Zamiast skanować, dajemy radiu 100% czasu na "krzyczenie" (Advertising).
-        // Dzięki temu urządzenie łączy się błyskawicznie i nie znika z eteru!
-        delay(200); 
-    }
-    // --- SEKCJA 3: Rekonekcja ---
+   // W architekturze FreeRTOS główna pętla loop() służy już tylko 
+    // do dbania o logikę reklamowania się, gdy telefon ucieknie.
+    // ---  Rekonekcja ---
     if (!deviceConnected && oldDeviceConnected) {
         delay(500); 
         pServer->startAdvertising(); 
@@ -106,5 +132,5 @@ void loop() {
         oldDeviceConnected = deviceConnected;
     }
 
-    delay(400); // Krótki oddech dla procesora
+    delay(500); // tu i tak nic się nie dzieje, więc możemy pozwolić sobie na dłuższe opóźnienie
 }
