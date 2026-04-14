@@ -29,22 +29,24 @@ def notification_handler(sender, data):
     log_data.append([current_time, delta, decoded_data])
 
 async def main():
-    print(f"Szukam urządzenia: {DEVICE_MAC}...")
-    
-    device = await BleakScanner.find_device_by_filter(
-            lambda d, ad: d.address.upper() == DEVICE_MAC.upper(),
-            timeout=20.0
-        )
-
-    if not device:
-        print("[-] Target not found in the vicinity. Upewnij się, że ESP leży blisko!")
-        return
-
-    # POPRAWKA: Zmiana logger.info na print
-    print(f"[+] Target found: {device.name} [{device.address}]. Establishing connection...")
-
+  
    MAX_RETRIES = 5
+
     for attempt in range(MAX_RETRIES):
+          print(f"Szukam urządzenia: {DEVICE_MAC}...")
+    
+        device = await BleakScanner.find_device_by_filter(
+                lambda d, ad: d.address.upper() == DEVICE_MAC.upper(),
+                timeout=20.0
+            )
+
+        if not device:
+            print("[-] Target not found in the vicinity. Upewnij się, że ESP leży blisko!")
+            return
+
+        # POPRAWKA: Zmiana logger.info na print
+        print(f"[+] Target found: {device.name} [{device.address}]. Establishing connection...")
+
         try:
             async with BleakClient(device, timeout=10.0) as client:
                 print(">>> POŁĄCZONO SUKCESEM! Subskrybowanie danych... <<<")
