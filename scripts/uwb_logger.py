@@ -30,7 +30,7 @@ def notification_handler(sender, data):
 
 async def main():
   
-   MAX_RETRIES = 5
+    MAX_RETRIES = 5
 
     for attempt in range(MAX_RETRIES):
           print(f"Szukam urządzenia: {DEVICE_MAC}...")
