@@ -1,5 +1,6 @@
 package com.polsl.bemyeyes
 
+import android.annotation.SuppressLint
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -13,13 +14,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.polsl.bemyeyes.navigation.*
 import com.polsl.bemyeyes.ui.theme.BeMyEyesTheme
+import android.content.Context
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var topologyDatabase: BuildingTopologyDatabase
     private lateinit var speechService: AccessibilitySpeechService
     private lateinit var routingEngine: NavigationRoutingEngine
-    private lateinit var mqttManager: MqttConnectionManager
+    private lateinit var bleManager: BleConnectionManager
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,9 +32,9 @@ class MainActivity : ComponentActivity() {
         topologyDatabase = BuildingTopologyDatabase()
         speechService = AccessibilitySpeechService(this)
         routingEngine = NavigationRoutingEngine(topologyDatabase, speechService)
-        
+
         // Inicjalizacja MQTT (usunięto context, bo MqttAsyncClient go nie potrzebuje)
-        mqttManager = MqttConnectionManager(routingEngine)
+       bleManager = BleConnectionManager(routingEngine)
 
         setContent {
             BeMyEyesTheme {
@@ -40,7 +43,7 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.padding(innerPadding),
                         onStartNavigation = { targetId ->
                             routingEngine.setNavigationTarget(targetId)
-                            startMqttServices()
+                            startBleServices()
                         }
                     )
                 }
@@ -48,15 +51,32 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun startMqttServices() {
-        Toast.makeText(this, "Łączenie z brokerem MQTT...", Toast.LENGTH_SHORT).show()
-        mqttManager.connect()
+    @SuppressLint("MissingPermission")
+    private fun startBleServices() {
+        Toast.makeText(this, "Łączenie z XIAO UWB...", Toast.LENGTH_SHORT).show()
+
+        // 1. Pobieramy główny sterownik Bluetooth z systemu telefonu
+        val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as android.bluetooth.BluetoothManager
+        val bluetoothAdapter = bluetoothManager.adapter
+
+        // 2. Sprawdzamy, czy telefon w ogóle ma Bluetooth i czy jest włączony
+        if (bluetoothAdapter != null && bluetoothAdapter.isEnabled) {
+
+            // 3. Wskazujemy konkretny adres MAC Twojego ESP32 (Zmień, jeśli Twój MAC jest inny!)
+            val device = bluetoothAdapter.getRemoteDevice("98:3D:AE:AC:4D:B2")
+
+            // 4. Odpalamy naszą metodę z managera
+            bleManager.establishConnection(device, this)
+
+        } else {
+            Toast.makeText(this, "BŁĄD: Włącz Bluetooth w telefonie!", Toast.LENGTH_LONG).show()
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         speechService.terminateService()
-        mqttManager.disconnect()
+        bleManager.disconnect()
     }
 }
 

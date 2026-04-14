@@ -1,16 +1,16 @@
 package com.polsl.bemyeyes.navigation
 
 import android.annotation.SuppressLint
-import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothGatt;
-import android.bluetooth.BluetoothGattCallback;
-import android.bluetooth.BluetoothGattCharacteristic;
-import android.bluetooth.BluetoothGattDescriptor;
-import android.bluetooth.BluetoothProfile;
-import android.content.Context;
-import android.util.Log;
-import java.nio.charset.StandardCharsets;
-import java.util.UUID;
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattCallback
+import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
+import android.bluetooth.BluetoothProfile
+import android.content.Context
+import android.util.Log
+import java.nio.charset.StandardCharsets
+import java.util.UUID
 
 //Ignorujemy ostrzeżenia IDE o uprawnieniach, bo załatwimy je w MainActivity
 @SuppressLint("MissingPermission")
