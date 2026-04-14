@@ -1,5 +1,6 @@
-package com.polsl.bemyeyes.navigation;
+package com.polsl.bemyeyes.navigation
 
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
@@ -11,93 +12,95 @@ import android.util.Log;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
-/**
- * Menedżer protokołu GATT odpowiedzialny za ciągłe nasłuchiwanie odczytów 
- * odległości transmitowanych z urządzenia ESP32 WROOM.
- */
-public class BleConnectionManager {
+//Ignorujemy ostrzeżenia IDE o uprawnieniach, bo załatwimy je w MainActivity
+@SuppressLint("MissingPermission")
+class BleConnectionManager(private val routingEngine: NavigationRoutingEngine) {
 
-    private BluetoothGatt connectedGattClient;
-    private final NavigationRoutingEngine routingEngine;
-    
-    // Standardowe identyfikatory UUID dla transmisji strumieniowej (np. profil UART)
-    private static final UUID SERVICE_UART_UUID = UUID.fromString("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
-    private static final UUID CHAR_TX_UUID = UUID.fromString("6E400003-B5A3-F393-E0A9-E50E24DCCA9E");
+    private var connectedGatt: BluetoothGatt? = null
 
-    public BleConnectionManager(NavigationRoutingEngine engine) {
-        this.routingEngine = engine;
+    // Odpowiednik statycznych zmiennych z Javy (w Kotlinie trzymane w companion object)
+    companion object {
+        private const val TAG = "BLE_COMM"
+
+        // UUID Z ESP32
+        val SERVICE_UUID: UUID = UUID.fromString("4fafc201-1fb5-459e-8fcc-c5c9c331914b")
+        val CHARACTERISTIC_UUID: UUID = UUID.fromString("beb5483e-36e1-4688-b7f5-ea07361b26a8")
+
+        // Standardowy UUID deskryptora dla powiadomień (CCCD)
+        val DESCRIPTOR_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
     }
 
-    public void establishConnection(BluetoothDevice targetDevice, Context applicationContext) {
-        connectedGattClient = targetDevice.connectGatt(applicationContext, false, gattEventHandler);
+    fun establishConnection(device: BluetoothDevice, context: Context) {
+        Log.i(TAG, "Inicjowanie połączenia z: ${device.name}")
+        // autoConnect=false jest stabilniejsze przy pierwszym parowaniu
+        connectedGatt = device.connectGatt(context, false, gattCallback)
     }
 
-    private final BluetoothGattCallback gattEventHandler = new BluetoothGattCallback() {
-        @Override
-        public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
+    private val gattCallback = object : BluetoothGattCallback() {
+        override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
-                Log.d("BLE_COMM", "Ustanowiono połączenie z wbudowanym modułem ESP32");
-                gatt.discoverServices();
+                Log.i(TAG, "Połączono! Rozpoczynam szukanie serwisów...")
+                gatt.discoverServices()
+            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                Log.w(TAG, "Rozłączono z urządzeniem.")
             }
         }
 
-        @Override
-        public void onServicesDiscovered(BluetoothGatt gatt, int status) {
+        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                BluetoothGattCharacteristic rxCharacteristic = gatt.getService(SERVICE_UART_UUID).getCharacteristic(CHAR_TX_UUID);
-                if (rxCharacteristic != null) {
-                    gatt.setCharacteristicNotification(rxCharacteristic, true);
-                    
-                    // Zapisanie modyfikacji na deskryptorze serwera celem cyklicznych powiadomień
-                    BluetoothGattDescriptor descriptor = rxCharacteristic.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"));
+                // Używamy bezpiecznego wywołania (?.) typowego dla Kotlina
+                val characteristic = gatt.getService(SERVICE_UUID)?.getCharacteristic(CHARACTERISTIC_UUID)
+
+                if (characteristic != null) {
+                    // AKTYWACJA NOTIFY
+                    gatt.setCharacteristicNotification(characteristic, true)
+
+                    // Zapis do fizycznego deskryptora 2902 na ESP32
+                    val descriptor = characteristic.getDescriptor(DESCRIPTOR_UUID)
                     if (descriptor != null) {
-                        descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-                        gatt.writeDescriptor(descriptor);
+                        descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                        gatt.writeDescriptor(descriptor)
+                        Log.i(TAG, "Subskrypcja Notify aktywna.")
                     }
+                } else {
+                    Log.e(TAG, "Nie znaleziono charakterystyki UWB na urządzeniu!")
                 }
             }
         }
 
-        @Override
-        public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
-            // Zakładamy odbiór ramki tekstowej postaci: UWB_001:1.2;UWB_002:1.8;
-            byte[] value = characteristic.getValue();
-            if (value != null) {
-                String rawPayload = new String(value, StandardCharsets.UTF_8);
-                extractProximityData(rawPayload);
+        // Ta metoda odbiera dane. Adnotacja Deprecated wynika z faktu, że w najnowszym Androidzie 13+
+        // dodano nową sygnaturę tej metody, ale ta stara nadal świetnie działa w ramach kompatybilności wstecznej.
+        @Deprecated("Deprecated in Java")
+        override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
+            val data = characteristic.value
+            if (data != null) {
+                val payload = String(data, StandardCharsets.UTF_8)
+                extractProximityData(payload)
             }
-        }
-    };
-
-    /**
-     * Realizuje uproszczony model proksymacji pozbawiony analizy trilateracyjnej.
-     * Wyodrębnia z ramki węzeł charakteryzujący się najbliższą odległością fizyczną.
-     */
-    private void extractProximityData(String payload) {
-        try {
-            String[] distanceRecords = payload.split(";");
-            String closestAnchorId = null;
-            double minimumDistance = Double.MAX_VALUE;
-
-            for (String record : distanceRecords) {
-                if (record.trim().isEmpty()) continue;
-                String[] components = record.split(":");
-                if (components.length == 2) {
-                    String anchorId = components[0].trim();
-                    double distanceValue = Double.parseDouble(components[1].trim());
-                    
-                    if (distanceValue < minimumDistance) {
-                        minimumDistance = distanceValue;
-                        closestAnchorId = anchorId;
-                    }
-                }
-            }
-
-            if (closestAnchorId != null) {
-                routingEngine.processNewTelemetryData(closestAnchorId, minimumDistance);
-            }
-        } catch (NumberFormatException e) {
-            Log.e("BLE_COMM", "Błąd formatowania danych numerycznych w ramce UWB");
         }
     }
+
+    private fun extractProximityData(payload: String) {
+        try {
+            val parts = payload.split(":")
+            if (parts.size == 2) {
+                val id = parts[0].trim()
+                val dist = parts[1].trim().toDouble()
+
+                // Przekazanie danych do Twojego silnika nawigacyjnego napisanego w Javie
+                routingEngine.processNewTelemetryData(id, dist)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Błąd parsowania: \$payload")
+        }
+    }
+
+    fun disconnect() {
+        connectedGatt?.let {
+            it.disconnect()
+            it.close()
+        }
+        connectedGatt = null
+    }
+
 }
