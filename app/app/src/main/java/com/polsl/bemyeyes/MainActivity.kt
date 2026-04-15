@@ -1,20 +1,27 @@
 package com.polsl.bemyeyes
 
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothManager
+import android.content.Context
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.polsl.bemyeyes.navigation.*
 import com.polsl.bemyeyes.ui.theme.BeMyEyesTheme
-import android.content.Context
 
 class MainActivity : ComponentActivity() {
 
@@ -23,24 +30,26 @@ class MainActivity : ComponentActivity() {
     private lateinit var routingEngine: NavigationRoutingEngine
     private lateinit var bleManager: BleConnectionManager
 
+    // Stan trzymający logi, obserwowany przez UI (Jetpack Compose)
+    private val debugLogs = mutableStateListOf<String>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Inicjalizacja komponentów nawigacyjnych
         topologyDatabase = BuildingTopologyDatabase()
         speechService = AccessibilitySpeechService(this)
         routingEngine = NavigationRoutingEngine(topologyDatabase, speechService)
 
         // Inicjalizacja MQTT (usunięto context, bo MqttAsyncClient go nie potrzebuje)
-       bleManager = BleConnectionManager(routingEngine)
+        bleManager = BleConnectionManager(routingEngine)
 
         setContent {
             BeMyEyesTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     NavigationScreen(
                         modifier = Modifier.padding(innerPadding),
+                        logs = debugLogs,
                         onStartNavigation = { targetId ->
                             routingEngine.setNavigationTarget(targetId)
                             startBleServices()
@@ -53,62 +62,76 @@ class MainActivity : ComponentActivity() {
 
     @SuppressLint("MissingPermission")
     private fun startBleServices() {
-        Toast.makeText(this, "Łączenie z XIAO UWB...", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Rozpoczynam procedurę BLE...", Toast.LENGTH_SHORT).show()
 
-        // 1. Pobieramy główny sterownik Bluetooth z systemu telefonu
-        val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as android.bluetooth.BluetoothManager
+        val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         val bluetoothAdapter = bluetoothManager.adapter
 
-        // 2. Sprawdzamy, czy telefon w ogóle ma Bluetooth i czy jest włączony
         if (bluetoothAdapter != null && bluetoothAdapter.isEnabled) {
-
-            // 3. Wskazujemy konkretny adres MAC Twojego ESP32 (Zmień, jeśli Twój MAC jest inny!)
-            val device = bluetoothAdapter.getRemoteDevice("98:3D:AE:AC:4D:B2")
-
-            // 4. Odpalamy naszą metodę z managera
+            val device = bluetoothAdapter.getRemoteDevice("98:3D:AE:AC:4D:B2") // ZMIEŃ NA SWÓJ MAC ESP32!
             bleManager.establishConnection(device, this)
-
         } else {
-            Toast.makeText(this, "BŁĄD: Włącz Bluetooth w telefonie!", Toast.LENGTH_LONG).show()
+            debugLogs.add(0, "BŁĄD: Włącz Bluetooth w ustawieniach!")
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        speechService.terminateService()
+        speechService.terminateService() // Może zgłaszać błąd jeśli masz inną nazwę w klasie, w razie czego zwiń to w try-catch lub zakomentuj na ten test
         bleManager.disconnect()
     }
 }
 
 @Composable
-fun NavigationScreen(modifier: Modifier = Modifier, onStartNavigation: (String) -> Unit) {
+fun NavigationScreen(
+    modifier: Modifier = Modifier,
+    logs: List<String>,
+    onStartNavigation: (String) -> Unit
+) {
     Column(
         modifier = modifier
             .fillMaxSize()
             .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = "Asystent Nawigacji MQTT",
-            style = MaterialTheme.typography.headlineMedium
-        )
-        Spacer(modifier = Modifier.height(32.dp))
-        
+        Text(text = "Asystent UWB/BLE", style = MaterialTheme.typography.headlineMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+
         Button(
-            onClick = { onStartNavigation("A1") }, // Sala 420 (kotwica A1)
+            onClick = { onStartNavigation("A1") },
             modifier = Modifier.fillMaxWidth().height(60.dp)
         ) {
-            Text("Nawiguj do Sali 420 (A1)")
+            Text("Nawiguj do Sali 420 (Kotwica A1)")
         }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
+        Spacer(modifier = Modifier.height(8.dp))
         Button(
             onClick = { onStartNavigation("UWB_001") },
             modifier = Modifier.fillMaxWidth().height(60.dp)
         ) {
             Text("Nawiguj do Sali 214")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // KONSOLA DEBUG (odpowiednik nRF Connect)
+        Text("Konsola Debugowania BLE:", style = MaterialTheme.typography.labelLarge)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f) // Zajmuje resztę ekranu
+                .background(Color.Black)
+                .padding(8.dp)
+        ) {
+            LazyColumn {
+                items(logs) { logMsg ->
+                    Text(
+                        text = logMsg,
+                        color = Color.Green,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp
+                    )
+                }
+            }
         }
     }
 }
