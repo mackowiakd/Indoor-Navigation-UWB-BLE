@@ -42,7 +42,13 @@ class MainActivity : ComponentActivity() {
         routingEngine = NavigationRoutingEngine(topologyDatabase, speechService)
 
         // Inicjalizacja MQTT (usunięto context, bo MqttAsyncClient go nie potrzebuje)
-        bleManager = BleConnectionManager(routingEngine)
+        bleManager = BleConnectionManager(routingEngine) { nowaWiadomosc ->
+            // Upewniamy się, że modyfikujemy interfejs w głównym wątku
+            runOnUiThread {
+                debugLogs.add(0, nowaWiadomosc) // Najnowsze na samej górze
+                if (debugLogs.size > 50) debugLogs.removeAt(debugLogs.size - 1) // Pamiętamy tylko 50 ostatnich
+            }
+        }
 
         setContent {
             BeMyEyesTheme {
@@ -53,7 +59,11 @@ class MainActivity : ComponentActivity() {
                         onStartNavigation = { targetId ->
                             routingEngine.setNavigationTarget(targetId)
                             startBleServices()
-                        }
+                        },
+                        onDisconnect = { // <--- NOWA AKCJA
+                        bleManager.disconnect()
+                        debugLogs.add(0, "🛑 Wymuszono rozłączenie (Manual)")
+                         }
                     )
                 }
             }
@@ -86,7 +96,8 @@ class MainActivity : ComponentActivity() {
 fun NavigationScreen(
     modifier: Modifier = Modifier,
     logs: List<String>,
-    onStartNavigation: (String) -> Unit
+    onStartNavigation: (String) -> Unit,
+    onDisconnect: () -> Unit
 ) {
     Column(
         modifier = modifier
@@ -94,7 +105,22 @@ fun NavigationScreen(
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(text = "Asystent UWB/BLE", style = MaterialTheme.typography.headlineMedium)
+        // Tytuł i przycisk w jednym rzędzie
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = "Asystent UWB/BLE", style = MaterialTheme.typography.titleLarge)
+            Button(
+                onClick = onDisconnect,
+                colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+            ) {
+                Text("Rozłącz")
+            }
+        }
+
+
         Spacer(modifier = Modifier.height(16.dp))
 
         Button(

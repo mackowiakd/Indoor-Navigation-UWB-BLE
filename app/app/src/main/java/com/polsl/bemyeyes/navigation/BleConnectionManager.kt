@@ -14,7 +14,9 @@ import java.util.UUID
 
 //Ignorujemy ostrzeżenia IDE o uprawnieniach, bo załatwimy je w MainActivity
 @SuppressLint("MissingPermission")
-class BleConnectionManager(private val routingEngine: NavigationRoutingEngine) {
+class BleConnectionManager(
+    private val routingEngine: NavigationRoutingEngine,
+    private val onLogUpdate: (String) -> Unit) {
 
     private var connectedGatt: BluetoothGatt? = null
 
@@ -29,9 +31,12 @@ class BleConnectionManager(private val routingEngine: NavigationRoutingEngine) {
         // Standardowy UUID deskryptora dla powiadomień (CCCD)
         val DESCRIPTOR_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
     }
-
+    private fun postLog(message: String) {
+        Log.i(TAG, message)
+        onLogUpdate(message)
+    }
     fun establishConnection(device: BluetoothDevice, context: Context) {
-        Log.i(TAG, "Inicjowanie połączenia z: ${device.name}")
+        postLog("⚙️ Szukam: ${device.name ?: device.address}")
         // autoConnect=false jest stabilniejsze przy pierwszym parowaniu
         connectedGatt = device.connectGatt(context, false, gattCallback)
     }
@@ -39,10 +44,10 @@ class BleConnectionManager(private val routingEngine: NavigationRoutingEngine) {
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
-                Log.i(TAG, "Połączono! Rozpoczynam szukanie serwisów...")
+                postLog("✅ POŁĄCZONO! Szukam serwisów...")
                 gatt.discoverServices()
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                Log.w(TAG, "Rozłączono z urządzeniem.")
+                postLog("❌ ROZŁĄCZONO.")
             }
         }
 
@@ -60,10 +65,10 @@ class BleConnectionManager(private val routingEngine: NavigationRoutingEngine) {
                     if (descriptor != null) {
                         descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                         gatt.writeDescriptor(descriptor)
-                        Log.i(TAG, "Subskrypcja Notify aktywna.")
+                        postLog("🔔 Powiadomienia (Notify) AKTYWNE!")
                     }
                 } else {
-                    Log.e(TAG, "Nie znaleziono charakterystyki UWB na urządzeniu!")
+                    postLog("⚠️ BŁĄD: Nie znaleziono charakterystyki UWB!")
                 }
             }
         }
@@ -75,6 +80,7 @@ class BleConnectionManager(private val routingEngine: NavigationRoutingEngine) {
             val data = characteristic.value
             if (data != null) {
                 val payload = String(data, StandardCharsets.UTF_8)
+                postLog("📡 RX: $payload")
                 extractProximityData(payload)
             }
         }
@@ -85,13 +91,16 @@ class BleConnectionManager(private val routingEngine: NavigationRoutingEngine) {
             val parts = payload.split(":")
             if (parts.size == 2) {
                 val id = parts[0].trim()
-                val dist = parts[1].trim().toDouble()
+                val dist = parts[1].trim().toDoubleOrNull() //uzywamy zeby apka nie wywali sie przy smieciowych danych
 
-                // Przekazanie danych do Twojego silnika nawigacyjnego napisanego w Javie
-                routingEngine.processNewTelemetryData(id, dist)
+                if (dist != null) {
+                    routingEngine.processNewTelemetryData(id, dist)
+                } else {
+                    postLog("⚠️ Odrzucono śmieci: $payload")
+                }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Błąd parsowania: \$payload")
+            postLog("⚠️ Błąd parsowania: $payload")
         }
     }
 
