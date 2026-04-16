@@ -1,22 +1,22 @@
 #include <Arduino.h>
-#include <BLEDevice.h>
-#include <BLEServer.h>
-#include <BLEUtils.h>
-#include <BLE2902.h>
-#include <BLEScan.h>
+#include <NimBLEDevice.h>
+#include <NimBLEServer.h>
+#include <NimBLEUtils.h>
+
+#include <NimBLEScan.h>
 
 // --- KONFIGURACJA SERWERA ---
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
-
-BLEServer* pServer = NULL;
-BLECharacteristic* pCharacteristic = NULL;
+    
+NimBLEServer* pServer = NULL;
+NimBLECharacteristic* pCharacteristic = NULL;
 bool deviceConnected = false;
 bool oldDeviceConnected = false;
 
 // --- KONFIGURACJA SKANERA ---
 int scanTime = 2; // Czas pojedynczego skanu w sekundach
-BLEScan* pBLEScan;
+NimBLEScan* pBLEScan;
 
 // --- UCHWYTY ZADAŃ (FreeRTOS) ---
 TaskHandle_t TaskNotifyHandle;
@@ -31,20 +31,22 @@ String get_simulated_uwb_data() {
 }
 
 // --- CALLBACKI SERWERA ---
-class MyServerCallbacks: public BLEServerCallbacks {
-    void onConnect(BLEServer* pServer) { deviceConnected = true; Serial.println(">>> TELEFON POŁĄCZONY Z SERWEREM! <<<"); };
-    void onDisconnect(BLEServer* pServer) { deviceConnected = false; Serial.println(">>> TELEFON ODŁĄCZONY! <<<"); }
+class MyServerCallbacks: public NimBLEServerCallbacks {
+    void onConnect(NimBLEServer* pServer) { deviceConnected = true; Serial.println(">>> TELEFON POŁĄCZONY Z SERWEREM! <<<"); };
+    void onDisconnect(NimBLEServer* pServer) { deviceConnected = false; Serial.println(">>> TELEFON ODŁĄCZONY! <<<"); }
 };
 
 // --- CALLBACKI SKANERA (Co się dzieje, gdy ESP coś usłyszy) ---
-class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
-    void onResult(BLEAdvertisedDevice advertisedDevice) {
+
+class MyAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
+    //Zamiast kopiować obiekt, NimBLE przekazuje tylko wskaźnik (*) do tego urządzenia w pamięci.
+    void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
         // Tu filtrujemy! Zamiast śmiecić konsolę wszystkim, wypiszmy to, co ma nazwę lub silny sygnał
-        if (advertisedDevice.haveName()) {
+        if (advertisedDevice->haveName()) {
             Serial.printf("Znalaziono TAG: %s | MAC: %s | RSSI: %d dBm \n", 
-                          advertisedDevice.getName().c_str(), 
-                          advertisedDevice.getAddress().toString().c_str(), 
-                          advertisedDevice.getRSSI());
+                          advertisedDevice->getName().c_str(), 
+                          advertisedDevice->getAddress().toString().c_str(), 
+                          advertisedDevice->getRSSI());
         }
     }
 };
@@ -55,7 +57,8 @@ void TaskNotify(void *pvParameters) {
     for (;;) { // Nieskończona pętla zadania
         if (deviceConnected) {
             String uwb_data = get_simulated_uwb_data();
-            pCharacteristic->setValue(uwb_data.c_str());
+            //musi byc jawne rzutowanie na uint8_t* bo NimBLE ninaczej wysyla nam 4-bajtowy adres z RAM
+            pCharacteristic->setValue((uint8_t*)uwb_data.c_str(), uwb_data.length());
             pCharacteristic->notify();
         }
         // Uśpij ten wątek na 100ms (10Hz). 
@@ -94,11 +97,11 @@ void setup() {
     pServer = BLEDevice::createServer();
     pServer->setCallbacks(new MyServerCallbacks());
     BLEService *pService = pServer->createService(SERVICE_UUID);
-    pCharacteristic = pService->createCharacteristic(
+   pCharacteristic = pService->createCharacteristic(
                         CHARACTERISTIC_UUID,
-                        BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY
+                        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
                       );
-    pCharacteristic->addDescriptor(new BLE2902());
+    
     pService->start();
     BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(SERVICE_UUID);
