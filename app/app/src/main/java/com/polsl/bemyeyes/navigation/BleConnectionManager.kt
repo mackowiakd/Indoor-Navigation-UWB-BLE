@@ -88,16 +88,25 @@ class BleConnectionManager(
 
     private fun extractProximityData(payload: String) {
         try {
-            val parts = payload.split(":")
-            if (parts.size == 2) {
-                val id = parts[0].trim()
-                val dist = parts[1].trim().toDoubleOrNull() //uzywamy zeby apka nie wywali sie przy smieciowych danych
+            // Nowa logika w Androidzie:
+            val records = payload.split(";")
+            for (record in records) {
+                val parts = record.trim().split(":")
+                if (parts.size == 2) {
+                    val id = parts[0].trim()
+                    val dist = parts[1].trim().toDoubleOrNull()
 
-                if (dist != null) {
-                    routingEngine.processNewTelemetryData(id, dist)
-                } else {
-                    postLog("⚠️ Odrzucono śmieci: $payload")
+                    if (dist != null) {
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            routingEngine.processNewTelemetryData(id, dist)
+                        }
+                    }
+                    else {
+                        postLog("⚠️ Odrzucono śmieci: $payload")
+                    }
                 }
+
+
             }
         } catch (e: Exception) {
             postLog("⚠️ Błąd parsowania: $payload")
