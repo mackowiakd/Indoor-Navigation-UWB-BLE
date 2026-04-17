@@ -4,11 +4,27 @@
 #include <NimBLEUtils.h>
 
 #include <NimBLEScan.h>
+#include <math.h> // Wymagane do funkcji pow()
 
 // --- KONFIGURACJA SERWERA ---
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
-    
+
+// adresy MAC swoich dwóch urządzeń testowych (pisane małymi literami!)
+const std::string MOCK_TAG_1_MAC = "11:22:33:44:55:66"; // np. Biurko
+const std::string MOCK_TAG_2_MAC = "aa:bb:cc:dd:ee:ff"; // np. Ekspres
+
+// Zmienne przechowujące ostatni przefiltrowany dystans (-1.0 oznacza, że tagu nie ma w pobliżu)
+float distTag1 = -1.0;
+float distTag2 = -1.0;
+float UWB_dist = 2.0;
+
+// Stałe do fizyki propagacji fal (Log-Distance Path Loss)
+const int TX_POWER = -60;      // RSSI z odległości 1 metra
+const float N_FACTOR = 2.5;    // Tłumienie (biuro)
+const float EMA_ALPHA = 0.15;  // Waga naszego filtra z symulatora (15% nowe dane, 85% stare)
+
+
 NimBLEServer* pServer = NULL;
 NimBLECharacteristic* pCharacteristic = NULL;
 bool deviceConnected = false;
@@ -22,12 +38,28 @@ NimBLEScan* pBLEScan;
 TaskHandle_t TaskNotifyHandle;
 TaskHandle_t TaskScanHandle;
 
-// --- SYMULATOR UWB ---
-String get_simulated_uwb_data() {
-    float distA1 = 2.10 + (sin(millis() / 1000.0) * 0.1); 
-    char dist_str[32];
-    sprintf(dist_str, "A1:%3.2f", distA1);
-    return String(dist_str);
+
+// Funkcja przeliczająca dBm na metry
+float calculateDistance(int rssi) {
+    return pow(10.0, ((float)TX_POWER - rssi) / (10.0 * N_FACTOR));
+}
+    
+// --- SYMULATOR UWB + data fro  BLE tags mocks ---
+String get_aggregated_data(float current_uwb_distance) {
+    // float distA1 = 2.10 + (sin(millis() / 1000.0) * 0.1); 
+    // char dist_str[32];
+    // sprintf(dist_str, "A1:%3.2f", distA1);
+    String payload = "A1:" + String(current_uwb_distance, 2);
+
+    // Dodajemy nasze Tagi (Mikronawigacja), jeśli je wykryto
+    if (distTag1 > 0) {
+        payload += ";TAG1:" + String(distTag1, 2);
+    }
+    if (distTag2 > 0) {
+        payload += ";TAG2:" + String(distTag2, 2);
+    }
+
+    return payload;
 }
 
 // --- CALLBACKI SERWERA ---
@@ -41,22 +73,39 @@ class MyServerCallbacks: public NimBLEServerCallbacks {
 class MyAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
     //Zamiast kopiować obiekt, NimBLE przekazuje tylko wskaźnik (*) do tego urządzenia w pamięci.
     void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
-        // Tu filtrujemy! Zamiast śmiecić konsolę wszystkim, wypiszmy to, co ma nazwę lub silny sygnał
-        if (advertisedDevice->haveName()) {
-            Serial.printf("Znalaziono TAG: %s | MAC: %s | RSSI: %d dBm \n", 
-                          advertisedDevice->getName().c_str(), 
-                          advertisedDevice->getAddress().toString().c_str(), 
-                          advertisedDevice->getRSSI());
-        }
+
+        td::string deviceMac = advertisedDevice.getAddress().toString();
+        int currentRssi = advertisedDevice.getRSSI();
+
+        // 1. Sprawdzamy, czy to urządzenie nas interesuje (Fuzja Danych)
+        if (deviceMac == MOCK_TAG_1_MAC || deviceMac == MOCK_TAG_2_MAC) {
+            
+            // 2. Przeliczamy surowe RSSI na metry
+            float newDist = calculateDistance(currentRssi);
+
+            if (deviceMac == MOCK_TAG_1_MAC) {
+                if (distTag1 < 0) { 
+                    distTag1 = newDist; // Pierwszy pomiar
+                } else {
+                    distTag1 = (EMA_ALPHA * newDist) + ((1.0 - EMA_ALPHA) * distTag1); // Wygładzanie
+                }
+            } 
+            else if (deviceMac == MOCK_TAG_2_MAC) {
+                if (distTag2 < 0) { 
+                    distTag2 = newDist;
+                } else {
+                    distTag2 = (EMA_ALPHA * newDist) + ((1.0 - EMA_ALPHA) * distTag2);
+                }
+            }
     }
 };
 // ==============================================================
-// ZADANIE 1: Szybkie wysyłanie UWB (10 razy na sekundę)
+// ZADANIE 1: Szybkie wysyłanie UWB + tag (10 razy na sekundę)
 // ==============================================================
 void TaskNotify(void *pvParameters) {
     for (;;) { // Nieskończona pętla zadania
         if (deviceConnected) {
-            String uwb_data = get_simulated_uwb_data();
+            String uwb_data = get_agregated_data(UWB_data);
             //musi byc jawne rzutowanie na uint8_t* bo NimBLE ninaczej wysyla nam 4-bajtowy adres z RAM
             pCharacteristic->setValue((uint8_t*)uwb_data.c_str(), uwb_data.length());
             pCharacteristic->notify();
