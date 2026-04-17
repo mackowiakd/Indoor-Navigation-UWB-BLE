@@ -97,12 +97,13 @@ class BleConnectionManager(
                     val dist = parts[1].trim().toDoubleOrNull()
 
                     if (dist != null) {
+                        //wywolujemy glowny watek UI aby wyswietli dane
                         android.os.Handler(android.os.Looper.getMainLooper()).post {
                             routingEngine.processNewTelemetryData(id, dist)
                         }
                     }
                     else {
-                        postLog("⚠️ Odrzucono śmieci: $payload")
+                        postLog(" brak danych od $id: $payload")
                     }
                 }
 

@@ -1,89 +1,89 @@
-package com.polsl.bemyeyes.navigation;
+package com.polsl.bemyeyes.navigation
 
-import android.util.Log;
+import kotlin.math.roundToInt
 
 /**
  * Silnik analizujący stany przejść grafu budynku oraz dystrybuujący komendy głosowe.
  */
-public class NavigationRoutingEngine {
+class NavigationRoutingEngine(
+    private val topologyDatabase: BuildingTopologyDatabase,
+    private val speechService: AccessibilitySpeechService // Upewnij się, że ta klasa istnieje
+) {
 
-    private final BuildingTopologyDatabase topologyDatabase;
-    private final AccessibilitySpeechService speechService;
-    
-    private BuildingTopologyDatabase.AnchorNode currentEstimatedNode;
-    private BuildingTopologyDatabase.AnchorNode userDestinationNode;
+    // Znaki zapytania oznaczają, że na początku (przed wybraniem celu) te wartości są nullami
+    private var currentEstimatedNode: AnchorNode? = null
+    private var userDestinationNode: AnchorNode? = null
 
-    private static final double PASSING_THRESHOLD_METERS = 1.5;
-    private int lastAnnouncedDistanceInt = -1;
-    private boolean reachAnnounced15 = false;
-    private boolean reachAnnounced10 = false;
+    private var lastAnnouncedDistanceInt: Int = -1
+    private var reachAnnounced15: Boolean = false
+    private var reachAnnounced10: Boolean = false
 
-    public NavigationRoutingEngine(BuildingTopologyDatabase topology, AccessibilitySpeechService speechService) {
-        this.topologyDatabase = topology;
-        this.speechService = speechService;
+    companion object {
+        private const val PASSING_THRESHOLD_METERS = 1.5
     }
 
-    public void setNavigationTarget(String targetAnchorId) {
-        this.currentEstimatedNode = null;
-        this.userDestinationNode = topologyDatabase.getNodeById(targetAnchorId);
-        this.lastAnnouncedDistanceInt = -1;
-        this.reachAnnounced15 = false;
-        this.reachAnnounced10 = false;
-        
-        if (userDestinationNode != null) {
-            speechService.announceImportant("Rozpoczynam nawigację do " + userDestinationNode.humanReadableName);
+    fun setNavigationTarget(targetAnchorId: String) {
+        currentEstimatedNode = null
+        userDestinationNode = topologyDatabase.getNodeById(targetAnchorId)
+        lastAnnouncedDistanceInt = -1
+        reachAnnounced15 = false
+        reachAnnounced10 = false
+
+        // Magia Kotlina: Jeśli userDestinationNode NIE jest nullem, wykonaj to w klamrach
+        userDestinationNode?.let { dest ->
+            speechService.announceImportant("Rozpoczynam nawigację do ${dest.humanReadableName}")
         }
     }
 
-    public void processNewTelemetryData(String anchorId, double distanceInMeters) {
-        BuildingTopologyDatabase.AnchorNode detectedNode = topologyDatabase.getNodeById(anchorId);
-        if (detectedNode == null) return;
+    fun processNewTelemetryData(anchorId: String, distanceInMeters: Double) {
+        val detectedNode = topologyDatabase.getNodeById(anchorId) ?: return // Zabezpieczenie przed nieznanymi tagami
 
         // Obsługa dystansu do CELU (niezależnie od innych kotwic)
-        if (userDestinationNode != null && anchorId.equals(userDestinationNode.macAddress)) {
-            announceDistanceProgress(distanceInMeters);
+        if (userDestinationNode != null && anchorId == userDestinationNode!!.macAddress) {
+            announceDistanceProgress(distanceInMeters)
         }
 
         // Logika "mijania" innych punktów (tylko jeśli są blisko)
         if (distanceInMeters <= PASSING_THRESHOLD_METERS) {
-            if (currentEstimatedNode == null || !currentEstimatedNode.macAddress.equals(detectedNode.macAddress)) {
-                currentEstimatedNode = detectedNode;
-                evaluatePathAndAnnounce();
+            if (currentEstimatedNode == null || currentEstimatedNode!!.macAddress != detectedNode.macAddress) {
+                currentEstimatedNode = detectedNode
+                evaluatePathAndAnnounce()
             }
         }
     }
 
-    private void announceDistanceProgress(double distance) {
-        int distanceInt = (int) Math.round(distance);
+    private fun announceDistanceProgress(distance: Double) {
+        val distanceInt = distance.roundToInt()
+        val dest = userDestinationNode ?: return
 
         // Scenariusz: Finisz (1.0m)
         if (distance <= 1.0 && !reachAnnounced10) {
-            speechService.announceImportant("Jesteś przed " + userDestinationNode.humanReadableName);
-            reachAnnounced10 = true;
-            return;
+            speechService.announceImportant("Jesteś przed ${dest.humanReadableName}")
+            reachAnnounced10 = true
+            return
         }
 
         // Scenariusz: Finisz (1.5m) - to jest moment "dotarcia"
         if (distance <= 1.5 && !reachAnnounced15) {
-            speechService.announceImportant("Dotarłeś do celu. Jesteś przed " + userDestinationNode.humanReadableName);
-            reachAnnounced15 = true;
-            return;
+            speechService.announceImportant("Dotarłeś do celu. Jesteś przed ${dest.humanReadableName}")
+            reachAnnounced15 = true
+            return
         }
 
         // Scenariusz: Zbliżanie się (powyżej 1.5m)
         if (distance > 1.5) {
             if (distanceInt <= 10) {
-                // Poniżej 10m: co 1 metr
+                // Poniżej 10m: czytamy co 1 metr
                 if (distanceInt != lastAnnouncedDistanceInt) {
-                    speechService.announceBackground(distanceInt + " " + getMeterSpelling(distanceInt));
-                    lastAnnouncedDistanceInt = distanceInt;
+                    speechService.announceBackground("$distanceInt ${getMeterSpelling(distanceInt)}")
+                    lastAnnouncedDistanceInt = distanceInt
                 }
             } else {
-                // Powyżej 10m: co 5 metrów
-                int roundedTo5 = (distanceInt / 5) * 5;
+                // Powyżej 10m: czytamy co 5 metrów
+                val roundedTo5 = (distanceInt / 5) * 5
                 if (roundedTo5 != lastAnnouncedDistanceInt && distanceInt % 5 == 0) {
-                    speechService.announceBackground(distanceInt + " " + getMeterSpelling(distanceInt));
-                    lastAnnouncedDistanceInt = roundedTo5;
+                    speechService.announceBackground("$distanceInt ${getMeterSpelling(distanceInt)}")
+                    lastAnnouncedDistanceInt = roundedTo5
                 }
             }
         }
@@ -92,29 +92,31 @@ public class NavigationRoutingEngine {
     /**
      * Zwraca poprawną formę słowa "metr" w języku polskim.
      */
-    private String getMeterSpelling(int count) {
-        if (count == 1) return "metr";
-        int lastDigit = count % 10;
-        int lastTwoDigits = count % 100;
+    private fun getMeterSpelling(count: Int): String {
+        if (count == 1) return "metr"
+        val lastDigit = count % 10
+        val lastTwoDigits = count % 100
 
-        if (lastDigit >= 2 && lastDigit <= 4 && (lastTwoDigits < 12 || lastTwoDigits > 14)) {
-            return "metry";
+        // Pięknie uproszczony warunek dzięki operatorowi 'in'
+        return if (lastDigit in 2..4 && lastTwoDigits !in 12..14) {
+            "metry"
+        } else {
+            "metrów"
         }
-        return "metrów";
     }
 
-    private void evaluatePathAndAnnounce() {
-        if (userDestinationNode == null || currentEstimatedNode == null) return;
+    private fun evaluatePathAndAnnounce() {
+        val dest = userDestinationNode ?: return
+        val current = currentEstimatedNode ?: return
 
         // Jeśli właśnie minęliśmy cel, czyścimy go
-        if (currentEstimatedNode.macAddress.equals(userDestinationNode.macAddress)) {
-            userDestinationNode = null; 
-            currentEstimatedNode = null;
-            return;
+        if (current.macAddress == dest.macAddress) {
+            userDestinationNode = null
+            currentEstimatedNode = null
+            return
         }
 
-        speechService.announceBackground("Mijasz " + currentEstimatedNode.humanReadableName);
-        
-        // ... reszta logiki kierunkowej (skrzydła/piętra) ...
+        // String Interpolation: zamiast + zmienna + "tekst", wrzucamy zmienną prosto do cudzysłowu z dolarem!
+        speechService.announceBackground("Mijasz ${current.humanReadableName}")
     }
 }

@@ -136,6 +136,29 @@ fun NavigationScreen(
         ) {
             Text("Nawiguj do Sali 214")
         }
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(
+            onClick = { onStartNavigation("A1") },
+            modifier = Modifier.fillMaxWidth().height(60.dp)
+        ) {
+            Text("Nawiguj: Drzwi wyjściowe (UWB)")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Button(
+            onClick = { onStartNavigation("TAG_DESK") },
+            modifier = Modifier.fillMaxWidth().height(60.dp)
+        ) {
+            Text("Nawiguj: Biurko (BLE)")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Button(
+            onClick = { onStartNavigation("TAG_COFFEE") },
+            modifier = Modifier.fillMaxWidth().height(60.dp)
+        ) {
+            Text("Nawiguj: Ekspres do kawy (BLE)")
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
