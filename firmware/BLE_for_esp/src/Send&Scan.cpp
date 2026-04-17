@@ -5,14 +5,15 @@
 
 #include <NimBLEScan.h>
 #include <math.h> // Wymagane do funkcji pow()
+#include <string>
 
 // --- KONFIGURACJA SERWERA ---
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 
 // adresy MAC swoich dwóch urządzeń testowych (pisane małymi literami!)
-const std::string MOCK_TAG_1_MAC = "11:22:33:44:55:66"; // np. Biurko
-const std::string MOCK_TAG_2_MAC = "aa:bb:cc:dd:ee:ff"; // np. Ekspres
+const std::string MOCK_TAG_1_MAC = "b0:c7:de:26:8c:66"; // np. Biurko
+const std::string MOCK_TAG_2_MAC = "a8:03:2a:b8:ee:fa"; // shelly
 
 // Zmienne przechowujące ostatni przefiltrowany dystans (-1.0 oznacza, że tagu nie ma w pobliżu)
 float distTag1 = -1.0;
@@ -35,8 +36,8 @@ int scanTime = 2; // Czas pojedynczego skanu w sekundach
 NimBLEScan* pBLEScan;
 
 // --- UCHWYTY ZADAŃ (FreeRTOS) ---
-TaskHandle_t TaskNotifyHandle;
-TaskHandle_t TaskScanHandle;
+TaskHandle_t TaskNotifyHandle= NULL;
+TaskHandle_t TaskScanHandle=NULL;
 
 
 // Funkcja przeliczająca dBm na metry
@@ -74,8 +75,20 @@ class MyAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
     //Zamiast kopiować obiekt, NimBLE przekazuje tylko wskaźnik (*) do tego urządzenia w pamięci.
     void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
 
-        td::string deviceMac = advertisedDevice.getAddress().toString();
-        int currentRssi = advertisedDevice.getRSSI();
+        std::string deviceMac = advertisedDevice->getAddress().toString();
+        int currentRssi = advertisedDevice->getRSSI();
+
+        //  // Tu filtrujemy! Zamiast śmiecić konsolę wszystkim, wypiszmy to, co ma nazwę lub silny sygnał
+        // if (advertisedDevice->haveName()) {
+        //     Serial.printf("Znalaziono TAG: %s | MAC: %s | RSSI: %d dBm \n", 
+        //                   advertisedDevice->getName().c_str(), 
+        //                   advertisedDevice->getAddress().toString().c_str(), 
+        //                   advertisedDevice->getRSSI());
+        if (currentRssi > -80) { // Jeśli nie ma nazwy, ale jest blisko (RSSI > -80 dBm)
+            Serial.printf("Znaleziono TAG BEZ NAZWY | MAC: %s | RSSI: %d dBm \n", 
+                          advertisedDevice->getAddress().toString().c_str(), 
+                          advertisedDevice->getRSSI());
+        }
 
         // 1. Sprawdzamy, czy to urządzenie nas interesuje (Fuzja Danych)
         if (deviceMac == MOCK_TAG_1_MAC || deviceMac == MOCK_TAG_2_MAC) {
@@ -97,6 +110,7 @@ class MyAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
                     distTag2 = (EMA_ALPHA * newDist) + ((1.0 - EMA_ALPHA) * distTag2);
                 }
             }
+        }
     }
 };
 // ==============================================================
@@ -105,7 +119,7 @@ class MyAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
 void TaskNotify(void *pvParameters) {
     for (;;) { // Nieskończona pętla zadania
         if (deviceConnected) {
-            String uwb_data = get_agregated_data(UWB_data);
+            String uwb_data = get_aggregated_data(UWB_dist);
             //musi byc jawne rzutowanie na uint8_t* bo NimBLE ninaczej wysyla nam 4-bajtowy adres z RAM
             pCharacteristic->setValue((uint8_t*)uwb_data.c_str(), uwb_data.length());
             pCharacteristic->notify();
