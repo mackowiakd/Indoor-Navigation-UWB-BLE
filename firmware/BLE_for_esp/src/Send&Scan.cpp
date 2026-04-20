@@ -47,17 +47,16 @@ float calculateDistance(int rssi) {
     
 // --- SYMULATOR UWB + data fro  BLE tags mocks ---
 String get_aggregated_data(float current_uwb_distance) {
-    // float distA1 = 2.10 + (sin(millis() / 1000.0) * 0.1); 
-    // char dist_str[32];
-    // sprintf(dist_str, "A1:%3.2f", distA1);
+  
     String payload = "A1:" + String(current_uwb_distance, 2);
 
     // Dodajemy nasze Tagi (Mikronawigacja), jeśli je wykryto
-    if (distTag1 > 0) {
-        payload += ";TAG1:" + String(distTag1, 2);
+   if (distTag1 > 0) {
+        payload += ";TAG_DESK:" + String(distTag1, 2); 
     }
+    // ZMIANA TUTAJ: Wysyłamy TAG_COFFEE zamiast TAG2
     if (distTag2 > 0) {
-        payload += ";TAG2:" + String(distTag2, 2);
+        payload += ";TAG_COFFEE:" + String(distTag2, 2); 
     }
 
     return payload;
@@ -119,8 +118,10 @@ class MyAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
 void TaskNotify(void *pvParameters) {
     for (;;) { // Nieskończona pętla zadania
         if (deviceConnected) {
+        // Symulacja chodzenia użytkownika (wartość od 1.5 do 3.5 metra)
+            UWB_dist = 2.5 + sin(millis() / 2000.0); 
+
             String uwb_data = get_aggregated_data(UWB_dist);
-            //musi byc jawne rzutowanie na uint8_t* bo NimBLE ninaczej wysyla nam 4-bajtowy adres z RAM
             pCharacteristic->setValue((uint8_t*)uwb_data.c_str(), uwb_data.length());
             pCharacteristic->notify();
         }
