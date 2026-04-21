@@ -17,6 +17,9 @@ class NavigationRoutingEngine(
     private var lastAnnouncedDistanceInt: Int = -1
     private var reachAnnounced15: Boolean = false
     private var reachAnnounced10: Boolean = false
+    // NOWE ZMIENNE: Zapobiegają zalaniu kolejki TTS (Spam protection)
+    private var lastPassAnnouncementTimeMs: Long = 0
+    private val ANNOUNCEMENT_COOLDOWN_MS = 8000L // 8 sekund całkowitej ciszy dla "mijania"
 
     companion object {
         private const val PASSING_THRESHOLD_METERS = 1.5
@@ -43,11 +46,25 @@ class NavigationRoutingEngine(
             announceDistanceProgress(distanceInMeters)
         }
 
+
+
         // Logika "mijania" innych punktów (tylko jeśli są blisko)
         if (distanceInMeters <= PASSING_THRESHOLD_METERS) {
-            if (currentEstimatedNode == null || currentEstimatedNode!!.macAddress != detectedNode.macAddress) {
-                currentEstimatedNode = detectedNode
-                evaluatePathAndAnnounce()
+
+            // Ignoruj cel główny w logice mijania (żeby nie było nakładania komunikatów)
+            if (userDestinationNode != null && detectedNode.macAddress == userDestinationNode!!.macAddress) {
+                return
+            }
+
+            val currentTime = System.currentTimeMillis()
+
+            // Uruchom mijanie tylko, jeśli od poprzedniego minęło 8 sekund (Cooldown)
+            if (currentTime - lastPassAnnouncementTimeMs > ANNOUNCEMENT_COOLDOWN_MS) {
+                if (currentEstimatedNode == null || currentEstimatedNode!!.macAddress != detectedNode.macAddress) {
+                    currentEstimatedNode = detectedNode
+                    lastPassAnnouncementTimeMs = currentTime // Resetujemy zegar
+                    evaluatePathAndAnnounce()
+                }
             }
         }
     }
@@ -106,15 +123,11 @@ class NavigationRoutingEngine(
     }
 
     private fun evaluatePathAndAnnounce() {
-        val dest = userDestinationNode ?: return
+        // Pobieramy obecny punkt z tła (jeśli to null, przerywamy)
         val current = currentEstimatedNode ?: return
 
-        // Jeśli właśnie minęliśmy cel, czyścimy go
-        if (current.macAddress == dest.macAddress) {
-            userDestinationNode = null
-            currentEstimatedNode = null
-            return
-        }
+        // Pamiętaj: Cel główny tu NIE wejdzie, więc nie musimy go tu czyścić.
+        // Trafiają tu tylko tagi "mijane", więc po prostu je czytamy.
 
         // String Interpolation: zamiast + zmienna + "tekst", wrzucamy zmienną prosto do cudzysłowu z dolarem!
         speechService.announceBackground("Mijasz ${current.humanReadableName}")
