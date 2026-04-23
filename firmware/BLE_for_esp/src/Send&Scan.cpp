@@ -6,14 +6,16 @@
 #include <NimBLEScan.h>
 #include <math.h> // Wymagane do funkcji pow()
 #include <string>
+#include <vector>
 
 // --- KONFIGURACJA SERWERA ---
 #define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+#define FILTER_CHARACTERISTIC_UUID "c0de0001-feed-4688-b7f5-ea07361b26a8"
 
 // adresy MAC swoich dwóch urządzeń testowych (pisane małymi literami!)
-const std::string MOCK_TAG_1_MAC = "b0:c7:de:26:8c:66"; // np. Biurko
-const std::string MOCK_TAG_2_MAC = "a8:03:2a:b8:ee:fa"; // shelly
+const std::string MOCK_TAG_1_MAC = "ff:ff:12:b1:64:d1"; // desk 
+const std::string MOCK_TAG_2_MAC = "a8:03:2a:b8:ee:fa"; // coffe 
 
 // Zmienne przechowujące ostatni przefiltrowany dystans (-1.0 oznacza, że tagu nie ma w pobliżu)
 float distTag1 = -1.0;
@@ -69,6 +71,20 @@ class MyServerCallbacks: public NimBLEServerCallbacks {
 };
 
 // --- CALLBACKI SKANERA (Co się dzieje, gdy ESP coś usłyszy) ---
+std::vector<std::string> activeMacFilters;
+
+// Klasa nasłuchująca wiadomości od telefonu
+class MyWriteCallbacks: public NimBLECharacteristicCallbacks {
+    void onWrite(NimBLECharacteristic* pCharacteristic) {
+        std::string rxValue = pCharacteristic->getValue();
+        if (rxValue.length() > 0) {
+            Serial.printf("Otrzymano nową listę z telefonu: %s\n", rxValue.c_str());
+            
+            // Tutaj dopiszemy funkcję, która tnie ten tekst po średnikach (;) 
+            // i wrzuca adresy MAC do wektora 'activeMacFilters'.
+        }
+    }
+};
 
 class MyAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
     //Zamiast kopiować obiekt, NimBLE przekazuje tylko wskaźnik (*) do tego urządzenia w pamięci.
