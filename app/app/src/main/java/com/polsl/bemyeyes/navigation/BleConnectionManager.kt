@@ -12,6 +12,8 @@ import android.util.Log
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 
+
+
 //Ignorujemy ostrzeżenia IDE o uprawnieniach, bo załatwimy je w MainActivity
 @SuppressLint("MissingPermission")
 class BleConnectionManager(
@@ -19,6 +21,8 @@ class BleConnectionManager(
     private val onLogUpdate: (String) -> Unit) {
 
     private var connectedGatt: BluetoothGatt? = null
+    // Bezpieczny domyślny payload to 20 bajtów (MTU 23 - 3 bajty nagłówka)
+    private var currentPayloadLimit: Int = 20
 
     // Odpowiednik statycznych zmiennych z Javy (w Kotlinie trzymane w companion object)
     companion object {
@@ -30,6 +34,17 @@ class BleConnectionManager(
 
         // Standardowy UUID deskryptora dla powiadomień (CCCD)
         val DESCRIPTOR_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+        // NOWE: UUID uszu ESP32
+        val FILTER_CHAR_UUID: UUID = UUID.fromString("c0de0001-feed-4688-b7f5-ea07361b26a8")
+
+
+
+        // Twoja lista testowa (Mock) - to może docelowo przychodzić z bazy
+        val MOCK_MAC_LIST = listOf(
+            "b0:c7:de:26:8c:66", // Biurko
+            "a8:03:2a:b8:ee:fa", // Shelly/Ekspres
+            "c4:d5:e6:f7:08:09"  // Dodatkowy tag testowy
+        )
     }
     private fun postLog(message: String) {
         Log.i(TAG, message)
@@ -55,6 +70,8 @@ class BleConnectionManager(
         // Ta metoda odpali się, gdy telefon i ESP32 dogadają się co do wielkości paczki
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
+                // Zapisujemy nowy limit (MTU minus 3 bajty na nagłówek BLE)
+                currentPayloadLimit = mtu - 3
                 postLog("📦 MTU powiększone do: $mtu bajtów!")
                 // Dopiero TERAZ szukamy serwisów
                 gatt.discoverServices()
@@ -77,9 +94,19 @@ class BleConnectionManager(
                         gatt.writeDescriptor(descriptor)
                         postLog("🔔 Powiadomienia (Notify) AKTYWNE!")
                     }
-                } else {
-                    postLog("⚠️ BŁĄD: Nie znaleziono charakterystyki UWB!")
+
+
+                    //   czy na pewno w tej fukcji odbywa sie wysylka? bo to wyglada jak jendorazowa fukcji do wykrywania polaczenie BLE
+                    //   a nie skewencyjej oblusgi odbior/ wysylki danych
+
+                    postLog("⚙️ Wgrywam startowy filtr adresów MAC...")
+
+                   sendFilterToEsp() // Wywołanie wyśle zhardcodowaną listę z 'companion object'
                 }
+
+             else {
+                postLog("❌ Błąd odkrywania serwisów, status: $status")
+            }
             }
         }
 
@@ -122,6 +149,23 @@ class BleConnectionManager(
         } catch (e: Exception) {
             postLog("⚠️ Błąd parsowania: $payload")
         }
+    }
+
+    fun sendFilterToEsp() {
+        // 1. Upewniamy się, że mamy połączenie i znajdujemy naszą "rurę"
+        val gatt = connectedGatt ?: return
+        val service = gatt.getService(SERVICE_UUID) ?: return
+        val filterChar = service.getCharacteristic(FILTER_CHAR_UUID) ?: return
+
+        // 2. Sklejamy listę: "mac1;mac2"
+        val payload = MOCK_MAC_LIST.joinToString(";")
+
+        // 3. Wkładamy do rury i wysyłamy
+        filterChar.value = payload.toByteArray(Charsets.UTF_8)
+        filterChar.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+        gatt.writeCharacteristic(filterChar)
+
+        postLog("✅ Wysłano listę MAC do ESP32: $payload")
     }
 
     fun disconnect() {
