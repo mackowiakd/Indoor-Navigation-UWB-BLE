@@ -63,6 +63,9 @@ class BleConnectionManager(
                 // Zwiększamy paczkę z 20 na 512 bajtów!
                 gatt.requestMtu(512)
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                // KRYTYCZNA ZMIANA: Dopiero tu niszczymy i czyścimy obiekt GATT!
+                gatt.close()
+                connectedGatt = null
                 postLog("❌ ROZŁĄCZONO.")
             }
         }
@@ -169,11 +172,9 @@ class BleConnectionManager(
     }
 
     fun disconnect() {
-        connectedGatt?.let {
-            it.disconnect()
-            it.close()
-        }
-        connectedGatt = null
+        postLog("🔌 Próba bezpiecznego rozłączenia...")
+        // Wywołujemy TYLKO disconnect. Zamykanie zostawiamy na później!
+        connectedGatt?.disconnect()
     }
 
 }
