@@ -34,6 +34,7 @@ NimBLECharacteristic* pCharacteristic = NULL;
 NimBLECharacteristic* pFilterCharacteristic = NULL; // Ta charakterystyka będzie służyć do odbierania listy MACów z telefonu    
 bool deviceConnected = false;
 bool oldDeviceConnected = false;
+bool newFilterReceived = false; // Flaga do komunikacji między wątkami (Przerwanie -> TaskNotify)
 
 // --- KONFIGURACJA SKANERA ---
 int scanTime = 2; // Czas pojedynczego skanu w sekundach
@@ -80,9 +81,9 @@ class MyWriteCallbacks: public NimBLECharacteristicCallbacks {
         std::string rxValue = pCharacteristic->getValue();
         if (rxValue.length() > 0) {
             Serial.printf("Otrzymano nową listę z telefonu: %s\n", rxValue.c_str());
+            newFilterReceived = true; // Ustawiamy flagę, że mamy nowe dane do przetworzenia w TaskNotify
             
-            // Tutaj dopiszemy funkcję, która tnie ten tekst po średnikach (;) 
-            // i wrzuca adresy MAC do wektora 'activeMacFilters'.
+            //wyslac powiadomienie do TaskNotfiy z playloadem "list delivered"
         }
     }
 };
@@ -135,12 +136,27 @@ class MyAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
 void TaskNotify(void *pvParameters) {
     for (;;) { // Nieskończona pętla zadania
         if (deviceConnected) {
-        // Symulacja chodzenia użytkownika (wartość od 1.5 do 3.5 metra)
+            if (newFilterReceived) {
+                // SCENARIUSZ A: Właśnie otrzymaliśmy nową listę!
+                // Wysyłamy sztuczny pakiet "ACK" w formacie bezpiecznym dla Kotlina
+                String confirmMsg = "Dlvrd_succesfully:1.1";
+                
+                // Używamy globalnej zmiennej pCharacteristic (tej od NOTIFY)
+                ::pCharacteristic->setValue((uint8_t*)confirmMsg.c_str(), confirmMsg.length());
+                ::pCharacteristic->notify();
+                
+                Serial.println(" Wysłano potwierdzenie (ACK) do aplikacji!");
+                newFilterReceived = false; // Opuszczamy flagę
+                
+            } 
+            else {
+            // Symulacja chodzenia użytkownika (wartość od 1.5 do 3.5 metra)
             UWB_dist = 2.5 + sin(millis() / 2000.0); 
 
             String uwb_data = get_aggregated_data(UWB_dist);
             pCharacteristic->setValue((uint8_t*)uwb_data.c_str(), uwb_data.length());
             pCharacteristic->notify();
+            }
         }
         // Uśpij ten wątek na 100ms (10Hz). 
         // W tym czasie system oddaje zasoby procesora Skanerowi!
