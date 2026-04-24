@@ -16,7 +16,8 @@
 // adresy MAC swoich dwóch urządzeń testowych (pisane małymi literami!)
 const std::string MOCK_TAG_1_MAC = "ff:ff:12:b1:64:d1"; // desk 
 const std::string MOCK_TAG_2_MAC = "a8:03:2a:b8:ee:fa"; // coffe 
-
+// --- CALLBACKI SKANERA (Co się dzieje, gdy ESP coś usłyszy) ---
+std::vector<std::string> activeMacFilters; // Ta lista będzie aktualizowana z telefonu, aby filtrować tylko interesujące nas tagi
 // Zmienne przechowujące ostatni przefiltrowany dystans (-1.0 oznacza, że tagu nie ma w pobliżu)
 float distTag1 = -1.0;
 float distTag2 = -1.0;
@@ -30,6 +31,7 @@ const float EMA_ALPHA = 0.15;  // Waga naszego filtra z symulatora (15% nowe dan
 
 NimBLEServer* pServer = NULL;
 NimBLECharacteristic* pCharacteristic = NULL;
+NimBLECharacteristic* pFilterCharacteristic = NULL; // Ta charakterystyka będzie służyć do odbierania listy MACów z telefonu    
 bool deviceConnected = false;
 bool oldDeviceConnected = false;
 
@@ -70,8 +72,7 @@ class MyServerCallbacks: public NimBLEServerCallbacks {
     void onDisconnect(NimBLEServer* pServer) { deviceConnected = false; Serial.println(">>> TELEFON ODŁĄCZONY! <<<"); }
 };
 
-// --- CALLBACKI SKANERA (Co się dzieje, gdy ESP coś usłyszy) ---
-std::vector<std::string> activeMacFilters;
+
 
 // Klasa nasłuchująca wiadomości od telefonu
 class MyWriteCallbacks: public NimBLECharacteristicCallbacks {
@@ -181,7 +182,13 @@ void setup() {
                         CHARACTERISTIC_UUID,
                         NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
                       );
-    
+                      
+    pFilterCharacteristic = pService->createCharacteristic(
+        FILTER_CHARACTERISTIC_UUID,
+        NIMBLE_PROPERTY::WRITE
+    );
+    pFilterCharacteristic->setCallbacks(new MyWriteCallbacks());
+
     pService->start();
     BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(SERVICE_UUID);
