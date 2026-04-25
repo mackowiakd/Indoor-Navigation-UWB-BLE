@@ -13,25 +13,48 @@ The system solves the problem of indoor positioning using a two-tier approach:
 2. **Micro-Navigation (BLE):** To identify specific Points of Interest (POIs) like doors, classrooms, or fire extinguishers without expensive UWB anchors, the ESP32 acts as a BLE Scanner. It detects nearby low-cost BLE Beacons and estimates proximity based on RSSI (Received Signal Strength Indicator).
 3. **Data Relay:** The ESP32 acts merely as a sensor hub. It bundles raw UWB distances and BLE RSSI readings and pushes them via a BLE GATT Server directly to the user's smartphone. The smartphone handles all heavy mathematical calculations and Text-To-Speech (TTS) feedback.
 
+## 🌟 System Architecture
+
+The project is built strictly on the **"Dumb Sensor, Smart Brain"** architectural paradigm, ensuring high scalability and low edge-device power consumption. It operates across three main tiers:
+
+### 1. The Edge (ESP32 WROVER + DW3000 UWB)
+Written in **C++** using **FreeRTOS** to leverage the dual-core architecture:
+* **Core 0 (PRO_CPU):** Dedicated exclusively to the `NimBLE` Bluetooth stack to ensure uninterrupted radio communication.
+* **Core 1 (APP_CPU):** Handles real-time UWB Time-of-Flight (ToF) distance calculations in the main loop, while background FreeRTOS tasks manage BLE beacon scanning and asynchronous data transmission.
+* **Dynamic Hardware Filtering:** To save bandwidth and battery, the ESP32 receives an active list of MAC addresses (Filter) from the mobile app via BLE `WRITE`. It automatically ignores all irrelevant BLE tags at the hardware level.
+
+### 2. The Brain (Android Mobile App)
+Written in **Native Kotlin**:
+* **Navigation Routing Engine:** Acts as the State Machine. It determines the user's current floor/zone based on UWB anchors and dynamically updates the ESP32's hardware filter.
+* **BLE Connection Manager:** A robust GATT client implementing custom MTU negotiation (512 bytes) and custom `ACK` (Acknowledgement) mechanisms for reliable data transfer.
+* **Offline-First Topology:** The building's topology and node map are cached locally, ensuring navigation continues seamlessly in areas without internet connectivity (e.g., elevators).
+
+### 3. The Data Warehouse (Analytics - *In Progress*)
+A relational database designed using a **Star Schema** to analyze IoT fleet health and track telemetry:
+* **Data Mining:** Implements Predictive Maintenance (e.g., Battery Decay Analysis based on long-term BLE RSSI drops) to alert building administration before a tag dies.
+
 ## 📂 Repository Structure
 
 This repository is organized as a Monorepo containing hardware firmware, testing scripts, and the mobile application:
 
-- `/firmware` - C++ / Arduino code for the ESP32 modules (BLE Server, Scanner, and UWB integration).
-- `/scripts` - Python and Bash scripts used for latency testing, time multiplexing evaluation, and simulating BLE tags on Linux.
-- `/app` - The Android mobile application (Kotlin) responsible for data processing, trilateration, and voice feedback. *(Work in progress)*
+- `/firmware` - C++ / PlatformIO code for the ESP32 nodes (UWB Initiators, UWB Responders, BLE Scanners).
+- `/app` - The Android mobile application (Kotlin) responsible for data processing, topology management, and connection handling.
+- `/scripts` - Python and Bash scripts used for telemetry generation and testing.
 - `/docs` - Project documentation, architectural diagrams, and mathematical models.
 
 ## ⚙️ Hardware Stack
 
-- **Primary Module:** [Makerfabs ESP32 UWB (DW3000)](https://www.makerfabs.com/esp32-uwb-ultra-wideband.html)
-- **Prototyping & Testing:** Seeed Studio XIAO ESP32C3
-- **Environment:** Standard BLE Tags/Beacons & UWB Anchors.
+- **Mobile Tag (User Device):** ESP32 WROVER + DW3000 UWB Module
+- **Anchors:** 2+ ESP32 UWB modules placed statically in the environment.
+- **Micro-Navigation Nodes:** Standard low-cost BLE Tags/Beacons (e.g., Shelly BLU).
+- **Client:** Smartphone running Android 8.0+ with BLE support.
 
 ## 🚀 Current Status
-- [x] BLE Server architecture implementation.
-- [x] BLE Scanner and Observer implementation.
-- [x] Time Multiplexing testing (Scanning + Notifying simultaneously).
-- [ ] Integration of actual UWB TWR readings.
+- [x] BLE Server & Scanner architecture implementation (FreeRTOS).
+- [x] Dual-Core execution and Time Multiplexing testing.
+- [x] Android App integration (Kotlin, MTU 512, BLE GATT Callbacks).
+- [x] Integration of actual UWB TWR (Time-of-Flight) distance readings.
+- [x] Dynamic BLE hardware filtering controlled by the mobile app.
+- [ ] Database / Data Warehouse implementation (HDiSED Project).
 - [ ] RSSI to Distance calibration (Log-Distance Path Loss Model).
-- [ ] Android App integration.
+- [ ] Text-To-Speech (TTS) voice feedback implementation.
