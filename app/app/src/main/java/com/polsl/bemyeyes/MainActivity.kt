@@ -78,7 +78,7 @@ class MainActivity : ComponentActivity() {
         val bluetoothAdapter = bluetoothManager.adapter
 
         if (bluetoothAdapter != null && bluetoothAdapter.isEnabled) {
-            val device = bluetoothAdapter.getRemoteDevice("98:3D:AE:AC:4D:B2") // ZMIEŃ NA SWÓJ MAC ESP32!
+            val device = bluetoothAdapter.getRemoteDevice("A4:E5:7C:DE:BC:F2") // ZMIEŃ NA SWÓJ MAC ESP32!
             bleManager.establishConnection(device, this)
         } else {
             debugLogs.add(0, "BŁĄD: Włącz Bluetooth w ustawieniach!")
