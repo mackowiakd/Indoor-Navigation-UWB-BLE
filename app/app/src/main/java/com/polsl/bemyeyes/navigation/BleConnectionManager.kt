@@ -59,9 +59,11 @@ class BleConnectionManager(
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
-                postLog("✅ POŁĄCZONO! Negocjuję rozmiar MTU...")
-                // Zwiększamy paczkę z 20 na 512 bajtów!
-                gatt.requestMtu(512)
+                // Złota zasada Android BLE: Dodajemy opóźnienie (Delay) przed operacjami na GATT
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    postLog("📦 Negocjuję rozmiar MTU...")
+                    gatt.requestMtu(512)
+                }, 600) // 600 milisekund opóźnienia
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 // KRYTYCZNA ZMIANA: Dopiero tu niszczymy i czyścimy obiekt GATT!
                 gatt.close()
