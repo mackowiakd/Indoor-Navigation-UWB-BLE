@@ -144,7 +144,7 @@ void setup() {
     dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
 
     // Inicjalizacja BLE
-    BLEDevice::init("XIAO_UWB_Combo");
+    BLEDevice::init("ESP32_UWB_DW3000");
     BLEDevice::setMTU(512); // Pamiętaj o MTU!
 
     pServer = BLEDevice::createServer();
