@@ -5,24 +5,13 @@
  * Kotwica inicjuje pomiar, wysyłając wiadomość "POLL" do tagu, a następnie czeka na odpowiedź "RESP". 
  * Po otrzymaniu odpowiedzi, kotwica oblicza czas transmisji i odbioru, a następnie wysyła ostateczną wiadomość "FINAL" z tymi informacjami, umożliwiając tagowi obliczenie odległości.
  * 
- * Wymagania sprzętowe:
- * - Moduł UWB DW3000
- * - Piny: RST (27), IRQ (34), SS (4)
  * 
- * Konfiguracja UWB:
- * - Kanał: 5
- * - Długość preambuły: 128
- * - PAC: 8
- * - Kody preambuły: 9 (PRF 64 MHz)
- * - SFD: DW 8-bit
- * - Prędkość danych: 6.8 Mbps
- * - Tryb PHR: Standardowy
- * - Timeout SFD: 129 + 8 - 8 symboli
- * - STS: Wyłączony
- * - PDOA: M0
- *
+ */
 #include <Arduino.h>
 #include <DW3000.h>
+#include <WiFi.h>
+#include <ArduinoOTA.h>
+#include <ESPmDNS.h> // opctional, for mDNS support
 
 // =========================================================================
 // 1. PINY WROVER
@@ -60,9 +49,10 @@ static uint8_t frame_seq_nb = 0;
 static uint8_t rx_buffer[RX_BUF_LEN];
 static uint32_t status_reg = 0;
 
-#define POLL_TX_TO_RESP_RX_DLY_UUS 240
-#define RESP_RX_TIMEOUT_UUS 400
-#define RESP_RX_TO_FINAL_TX_DLY_UUS 3100
+
+#define POLL_TX_TO_RESP_RX_DLY_UUS 500   // Czekaj 0.5ms po wysłaniu Pinga zanim włączysz nasłuch
+#define RESP_RX_TIMEOUT_UUS 3000         // Słuchaj na Ponga bardzo długo (aż 3 ms!)
+#define RESP_RX_TO_FINAL_TX_DLY_UUS 2500 // Daj Kotwicy aż 2.5 ms na obliczenia przed wysłaniem FINAL
 
 extern dwt_txconfig_t txconfig_options;
 
@@ -80,9 +70,31 @@ static void final_msg_set_ts(uint8_t *ts_field, uint32_t ts) {
 void setup() {
     Serial.begin(115200);
     delay(2000);
+    
     Serial.println("==================================");
     Serial.println(" UWB KOTWICA A1 (Inicjator) START ");
     Serial.println("==================================");
+    Serial.begin(115200);
+    delay(2000);
+    
+    // --- START DODATKU WiFi + OTA ---
+    Serial.println("Laczenie z WiFi...");
+    WiFi.mode(WIFI_STA);
+    WiFi.begin("TP-LINK_C21EBA", "123qweasd!"); // Wpisz swoje dane!
+
+    // Czekamy na połączenie
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+    
+ 
+
+    // Konfiguracja OTA
+    ArduinoOTA.setHostname("UWB_Kotwica_1"); // Tak nazwiemy to urządzenie
+    ArduinoOTA.begin();
+    Serial.println("Serwer OTA uruchomiony!");
+    // --- KONIEC DODATKU WiFi + OTA ---
 
     spiBegin(PIN_IRQ, PIN_RST);
     spiSelect(PIN_SS);
@@ -91,6 +103,7 @@ void setup() {
     while (!dwt_checkidlerc()) {
         Serial.println("Błąd: Moduł UWB nie odpowiada...");
         delay(1000);
+        ArduinoOTA.handle(); // <--- Pozwala na aktualizację nawet przy awarii sprzętu!
     }
     if (dwt_initialise(DWT_DW_INIT) == DWT_ERROR) {
         Serial.println("Błąd Inicjalizacji DW3000!");
@@ -122,7 +135,10 @@ void loop() {
     dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
 
     // Czekamy na odpowiedź RESP od Tagu
-    while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {};
+    while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
+       ArduinoOTA.handle(); // <--- Nasłuchuj OTA w trakcie czekania na radar
+        yield();             // <--- Oddaj na ułamek sekundy oddech procesorowi (zapobiega resetom)
+    }
 
     if (status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
         uint32_t frame_len;
@@ -169,6 +185,6 @@ void loop() {
     // Częstotliwość pingu: 100ms daje ~10 pomiarów na sekundę
     delay(100); 
     frame_seq_nb++;
+    ArduinoOTA.handle();
 }
 
-*/
