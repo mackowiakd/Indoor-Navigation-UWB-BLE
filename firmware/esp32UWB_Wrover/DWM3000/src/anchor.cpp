@@ -9,9 +9,7 @@
  */
 #include <Arduino.h>
 #include <DW3000.h>
-#include <WiFi.h>
-#include <ArduinoOTA.h>
-#include <ESPmDNS.h> // opctional, for mDNS support
+
 
 // =========================================================================
 // 1. PINY WROVER
@@ -50,7 +48,7 @@ static uint8_t rx_buffer[RX_BUF_LEN];
 static uint32_t status_reg = 0;
 
 
-#define POLL_TX_TO_RESP_RX_DLY_UUS 500   // Czekaj 0.5ms po wysłaniu Pinga zanim włączysz nasłuch
+#define POLL_TX_TO_RESP_RX_DLY_UUS 0   // Czekaj 0.5ms po wysłaniu Pinga zanim włączysz nasłuch
 #define RESP_RX_TIMEOUT_UUS 3000         // Słuchaj na Ponga bardzo długo (aż 3 ms!)
 #define RESP_RX_TO_FINAL_TX_DLY_UUS 2500 // Daj Kotwicy aż 2.5 ms na obliczenia przed wysłaniem FINAL
 
@@ -77,33 +75,17 @@ void setup() {
     Serial.begin(115200);
     delay(2000);
     
-    // --- START DODATKU WiFi + OTA ---
-    Serial.println("Laczenie z WiFi...");
-    WiFi.mode(WIFI_STA);
-    WiFi.begin("TP-LINK_C21EBA", "123qweasd!"); // Wpisz swoje dane!
-
-    // Czekamy na połączenie
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
-    }
-    
  
-
-    // Konfiguracja OTA
-    ArduinoOTA.setHostname("UWB_Kotwica_1"); // Tak nazwiemy to urządzenie
-    ArduinoOTA.begin();
-    Serial.println("Serwer OTA uruchomiony!");
-    // --- KONIEC DODATKU WiFi + OTA ---
-
+    // KRYTYCZNE LINIJKI
+    // Włączają one komunikację po kablach (SPI) między ESP32 a radarem DW3000
     spiBegin(PIN_IRQ, PIN_RST);
     spiSelect(PIN_SS);
     delay(2);
+ 
 
     while (!dwt_checkidlerc()) {
         Serial.println("Błąd: Moduł UWB nie odpowiada...");
         delay(1000);
-        ArduinoOTA.handle(); // <--- Pozwala na aktualizację nawet przy awarii sprzętu!
     }
     if (dwt_initialise(DWT_DW_INIT) == DWT_ERROR) {
         Serial.println("Błąd Inicjalizacji DW3000!");
@@ -132,12 +114,16 @@ void loop() {
     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
     dwt_writetxdata(sizeof(tx_poll_msg), tx_poll_msg, 0);
     dwt_writetxfctrl(sizeof(tx_poll_msg), 0, 1);
+
+    // KRYTYCZNA ZMIANA: Zabezpieczenie przed zawieszeniem!
+    // Ustawiamy, jak długo Kotwica ma czekać na Ponga (np. 3 milisekundy)
+    dwt_setrxaftertxdelay(POLL_TX_TO_RESP_RX_DLY_UUS);
+    dwt_setrxtimeout(RESP_RX_TIMEOUT_UUS);
     dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
 
     // Czekamy na odpowiedź RESP od Tagu
     while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
-       ArduinoOTA.handle(); // <--- Nasłuchuj OTA w trakcie czekania na radar
-        yield();             // <--- Oddaj na ułamek sekundy oddech procesorowi (zapobiega resetom)
+      
     }
 
     if (status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
@@ -185,6 +171,6 @@ void loop() {
     // Częstotliwość pingu: 100ms daje ~10 pomiarów na sekundę
     delay(100); 
     frame_seq_nb++;
-    ArduinoOTA.handle();
+   
 }
 
