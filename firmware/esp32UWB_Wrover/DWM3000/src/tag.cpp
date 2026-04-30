@@ -209,7 +209,7 @@ void loop() {
         
         // ---- SPRAWDZAMY CO FAKTYCZNIE PRZYSZŁO ----
         if (memcmp(rx_buffer, rx_poll_msg1, ALL_MSG_COMMON_LEN) == 0 && dA1 == 0) {
-            Serial.println("[UWB] Otrzymano POLL od Kotwicy A1! Wysyłam odpowiedź...");
+            //Serial.println("[UWB] Otrzymano POLL od Kotwicy A1! Wysyłam odpowiedź...");
             
             uint32_t resp_tx_time1;
             int ret1;
