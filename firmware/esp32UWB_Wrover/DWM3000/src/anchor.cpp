@@ -48,9 +48,10 @@ static uint8_t rx_buffer[RX_BUF_LEN];
 static uint32_t status_reg = 0;
 
 
-#define POLL_TX_TO_RESP_RX_DLY_UUS 0   // Czekaj 0.5ms po wysłaniu Pinga zanim włączysz nasłuch
-#define RESP_RX_TIMEOUT_UUS 3000         // Słuchaj na Ponga bardzo długo (aż 3 ms!)
-#define RESP_RX_TO_FINAL_TX_DLY_UUS 2500 // Daj Kotwicy aż 2.5 ms na obliczenia przed wysłaniem FINAL
+// PARAMETRY CZASOWE KOTWICY
+#define POLL_TX_TO_RESP_RX_DLY_UUS 150   // Zmienione z 0 na 150: Dajmy chipowi ułamek mikrosekundy na przejście w nasłuch
+#define RESP_RX_TIMEOUT_UUS 3000         // Timeout 3ms zostaje (zabezpieczenie)
+#define RESP_RX_TO_FINAL_TX_DLY_UUS 3500 // Zwiększone na 3ms: dajmy Kotwicy BARDZO DUŻO czasu na matematykę przed FINALem
 
 extern dwt_txconfig_t txconfig_options;
 
@@ -74,6 +75,7 @@ void setup() {
     Serial.println("==================================");
     Serial.begin(115200);
     delay(2000);
+    
     
  
     // KRYTYCZNE LINIJKI
@@ -109,6 +111,7 @@ void setup() {
 // 5. GŁÓWNA PĘTLA (Nadawanie do Tagu)
 // =========================================================================
 void loop() {
+ 
     // KROK 1: Wysyłamy wiadomość POLL
     tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
@@ -128,7 +131,10 @@ void loop() {
 
     if (status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
         uint32_t frame_len;
-        dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
+        // ZŁOTY STRZAŁ: Czyścimy OBA zdarzenia naraz!
+        dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_TXFRS_BIT_MASK);
+
+        //dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
         frame_len = dwt_read32bitreg(RX_FINFO_ID) & FRAME_LEN_MAX_EX;
         if (frame_len <= RX_BUF_LEN) {
             dwt_readrxdata(rx_buffer, frame_len, 0);
@@ -162,6 +168,10 @@ void loop() {
                 
                 // Cichy log - żeby nie zapychać procesora, wypisujemy kropkę
                 Serial.print("."); 
+            }
+             else {
+                // NOWY LOG: Złapany na gorącym uczynku!
+                Serial.println("\n[A1 ERR] Procesor zbyt wolny! Nie zdążyłem wysłać FINAL na czas.");
             }
         }
     } else {
