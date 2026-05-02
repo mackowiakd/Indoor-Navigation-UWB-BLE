@@ -51,7 +51,7 @@ static uint32_t status_reg = 0;
 // PARAMETRY CZASOWE KOTWICY
 #define POLL_TX_TO_RESP_RX_DLY_UUS 150   // Zmienione z 0 na 150: Dajmy chipowi ułamek mikrosekundy na przejście w nasłuch
 #define RESP_RX_TIMEOUT_UUS 3000         // Timeout 3ms zostaje (zabezpieczenie)
-#define RESP_RX_TO_FINAL_TX_DLY_UUS 8000 // dajmy Kotwicy BARDZO DUŻO czasu na matematykę przed FINALem
+#define RESP_RX_TO_FINAL_TX_DLY_UUS 4000 // dajmy Kotwicy BARDZO DUŻO czasu na matematykę przed FINALem
 
 extern dwt_txconfig_t txconfig_options;
 
@@ -61,7 +61,10 @@ static void final_msg_set_ts(uint8_t *ts_field, uint32_t ts) {
         ts_field[i] = (uint8_t) ts;
         ts >>= 8;
     }
-}
+};
+
+// Pomocnik do wyciągania pełnych 40-bitów z układu radaru
+
 
 // =========================================================================
 // 4. SETUP
@@ -147,10 +150,13 @@ void loop() {
 
             poll_tx_ts = dwt_readtxtimestamplo32();
             resp_rx_ts = dwt_readrxtimestamplo32();
-            final_tx_time = (resp_rx_ts + (RESP_RX_TO_FINAL_TX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;
+
+            uint64_t resp_rx_ts_64 = get_rx_timestamp_u64();
+            uint64_t final_tx_time_64 = (resp_rx_ts_64 + (RESP_RX_TO_FINAL_TX_DLY_UUS * UUS_TO_DWT_TIME)) ;
+            final_tx_time= (uint32_t)(final_tx_time_64 >> 8);
             dwt_setdelayedtrxtime(final_tx_time);
 
-            final_tx_ts = (((uint64_t)(final_tx_time & 0xFFFFFFFEUL)) << 8) + TX_ANT_DLY;
+            final_tx_ts = (((uint64_t)(final_tx_time & 0xFFFFFFFEUL)) << 8) + TX_ANT_DLY; // rekonstrukcja pełnego 40-bit timestampu dla FINALa, z uwzgeldniem maski dla rejestru opznienia
 
             // Wklejamy znaczniki czasu do ramki, żeby Tag mógł wyliczyć odległość
             final_msg_set_ts(&tx_final_msg[FINAL_MSG_POLL_TX_TS_IDX], poll_tx_ts);
@@ -162,7 +168,7 @@ void loop() {
             dwt_writetxfctrl(sizeof(tx_final_msg), 0, 1);
 
             // KROK 3: Wysyłamy ostateczną wiadomość FINAL OD RAZU po obliczeniach
-            if (dwt_starttx(DWT_START_TX_IMMEDIATE) == DWT_SUCCESS) {
+            if (dwt_starttx(DWT_START_TX_DELAYED) == DWT_SUCCESS) {
                 while (!(dwt_read32bitreg(SYS_STATUS_ID) & SYS_STATUS_TXFRS_BIT_MASK)) {};
                 dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
                 
