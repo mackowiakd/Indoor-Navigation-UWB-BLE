@@ -51,7 +51,7 @@ static uint32_t status_reg = 0;
 // PARAMETRY CZASOWE KOTWICY
 #define POLL_TX_TO_RESP_RX_DLY_UUS 150   // Zmienione z 0 na 150: Dajmy chipowi ułamek mikrosekundy na przejście w nasłuch
 #define RESP_RX_TIMEOUT_UUS 3000         // Timeout 3ms zostaje (zabezpieczenie)
-#define RESP_RX_TO_FINAL_TX_DLY_UUS 3500 // Zwiększone na 3ms: dajmy Kotwicy BARDZO DUŻO czasu na matematykę przed FINALem
+#define RESP_RX_TO_FINAL_TX_DLY_UUS 8000 // dajmy Kotwicy BARDZO DUŻO czasu na matematykę przed FINALem
 
 extern dwt_txconfig_t txconfig_options;
 
@@ -161,8 +161,8 @@ void loop() {
             dwt_writetxdata(sizeof(tx_final_msg), tx_final_msg, 0);
             dwt_writetxfctrl(sizeof(tx_final_msg), 0, 1);
 
-            // KROK 3: Wysyłamy ostateczną wiadomość FINAL
-            if (dwt_starttx(DWT_START_TX_DELAYED) == DWT_SUCCESS) {
+            // KROK 3: Wysyłamy ostateczną wiadomość FINAL OD RAZU po obliczeniach
+            if (dwt_starttx(DWT_START_TX_IMMEDIATE) == DWT_SUCCESS) {
                 while (!(dwt_read32bitreg(SYS_STATUS_ID) & SYS_STATUS_TXFRS_BIT_MASK)) {};
                 dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
                 
