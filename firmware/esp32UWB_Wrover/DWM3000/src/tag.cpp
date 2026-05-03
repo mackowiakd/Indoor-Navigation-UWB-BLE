@@ -1,6 +1,7 @@
 
 #include "config.h"
 #include <Arduino.h>
+#include "kinematicFilter.h"
 // =========================================================================
 // 2. KONFIGURACJA BLE (NimBLE)
 // =========================================================================
@@ -30,6 +31,8 @@ int scanTime = 2;
 NimBLEScan* pBLEScan;
 TaskHandle_t TaskNotifyHandle= NULL;
 TaskHandle_t TaskScanHandle=NULL;
+// Tworzymy filtr: Max prędkość obiektu 3.0 m/s, odchudzamy strumień danych do aktualizacji co 300 ms (ok. 3Hz)
+SmartUWBFilter filterA1(3.0, 300);
 
 float calculateDistance(int rssi) {
     return pow(10.0, ((float)TX_POWER - rssi) / (10.0 * N_FACTOR));
@@ -62,7 +65,7 @@ class MyAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
     void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
         std::string deviceMac = advertisedDevice->getAddress().toString();
         int currentRssi = advertisedDevice->getRSSI();
-
+        //tu iteracja po docelowej liscie tagow BLE
         if (deviceMac == MOCK_TAG_1_MAC || deviceMac == MOCK_TAG_2_MAC) {
             float newDist = calculateDistance(currentRssi);
             if (deviceMac == MOCK_TAG_1_MAC) {
@@ -195,7 +198,9 @@ void loop() {
         taskYIELD(); 
     };
 
-    // 2. Coś przyleciało do anteny!
+    // 2. Coś przyleciało do anteny! -> zmiana na TAG initialized TWR czyli my pytamy 
+    //po ID z naszej listy urządzeń docelowych (np. POLL do 0x0001)
+
     if (status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
         uint32_t frame_len;
         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
@@ -264,11 +269,24 @@ void loop() {
                         Serial.print(">>>>> SUKCES UWB! DYSTANS DO A1: ");
                         Serial.print(distance);
                         Serial.println(" metrów <<<<<");
+                    // --- Gdzieś w void loop() podczas odbierania danych UWB ---
+                    if (distance > 0.0 && distance < 100.0) {
+                        
+                        // 1. Wrzucamy do filtra (on sam zdecyduje, czy pomiar ma sens fizyczny w czasie)
+                        filterA1.addRawMeasurement(distance);
 
-                        if (distance > 0) {
-                            UWB_dist = distance; 
+                        // 2. Sprawdzamy, czy zebrało się wystarczająco poprawnych danych i minął zadany czas
+                        float clean_distance;
+                        if (filterA1.isReadyToReport(clean_distance)) {
+                            
+                            Serial.print("[GOTOWE DO BLE] Wyliczona odległość do A1: ");
+                            Serial.println(clean_distance);
+
+                            // 3. TUTAJ AKTUALIZUJESZ ZMIENNĄ DLA BLUETOOTHA!
+                            UWB_dist = clean_distance;
                             dA1 = 1;
                         }
+                    }
                     } else {
                         Serial.println("[ERR] Odebrano pakiet na końcu, ale to nie był FINAL od A1.");
                     }

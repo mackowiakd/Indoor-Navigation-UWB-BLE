@@ -54,6 +54,7 @@ static uint32_t status_reg = 0;
 #define RESP_RX_TO_FINAL_TX_DLY_UUS 4000 // dajmy Kotwicy BARDZO DUŻO czasu na matematykę przed FINALem
 
 extern dwt_txconfig_t txconfig_options;
+uint16_t my_anchor_address = 0x0001;
 
 // Funkcja pomocnicza do wklejania znaczników czasu (Timestamps) w ramkę
 static void final_msg_set_ts(uint8_t *ts_field, uint32_t ts) {
@@ -79,7 +80,7 @@ void setup() {
     Serial.begin(115200);
     delay(2000);
     
-    
+    dwt_setaddress16(my_anchor_address); // ustawiamy adres kotwicy (nie jest to krytyczne, ale dobrze mieć unikalny adres dla każdego urządzenia)
  
     // KRYTYCZNE LINIJKI
     // Włączają one komunikację po kablach (SPI) między ESP32 a radarem DW3000
