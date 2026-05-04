@@ -35,6 +35,10 @@ static dwt_config_t config = {
 static uint8_t tx_poll_msg[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'P', 'O', 'L', '1', 0x21, 0, 0};
 static uint8_t rx_resp_msg[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'E', '1', '1', 0x10, 0x02, 0, 0, 0, 0};
 static uint8_t tx_final_msg[]  = {0x41, 0x88, 0, 0xCA, 0xDE, 'F', 'I', '1', '1', 0x23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+// Nowa ramka: REPORT (Od Kotwicy do Taga)
+// Zawiera znak 'D' (Distance) i 4 bajty na przeliczonego Floata (odległość)
+static uint8_t tx_report_msg[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'E', 'P', 'O', 'R', 'T', 0, 0, 0, 0, 0, 0};
+#define REPORT_MSG_DIST_IDX 11 // Od tego miejsca zaczynamy wpisywać 4 bajty odległości
 
 #define ALL_MSG_COMMON_LEN 10
 #define ALL_MSG_SN_IDX 2
@@ -130,7 +134,7 @@ void loop() {
 
     // Czekamy na odpowiedź RESP od Tagu
     while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
-      
+      // taskYIELD();  //for tag
     }
 
     if (status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
@@ -172,6 +176,15 @@ void loop() {
             if (dwt_starttx(DWT_START_TX_DELAYED) == DWT_SUCCESS) {
                 while (!(dwt_read32bitreg(SYS_STATUS_ID) & SYS_STATUS_TXFRS_BIT_MASK)) {};
                 dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
+                
+
+                //wsyalnie  REPORT (prosba do kotwicy i zwrocenie FINALa)
+                // float received_distance;
+                // memcpy(&received_distance, &rx_buffer[REPORT_MSG_DIST_IDX], 4);
+                // // I gotowe! Możemy to wrzucić do naszego filtra SmartUWBFilter!
+                // filterA1.addRawMeasurement(received_distance); 
+
+
                 
                 // Cichy log - żeby nie zapychać procesora, wypisujemy kropkę
                 Serial.print("."); 

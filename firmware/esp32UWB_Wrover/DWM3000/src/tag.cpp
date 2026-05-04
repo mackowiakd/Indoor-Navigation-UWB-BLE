@@ -269,7 +269,19 @@ void loop() {
                         Serial.print(">>>>> SUKCES UWB! DYSTANS DO A1: ");
                         Serial.print(distance);
                         Serial.println(" metrów <<<<<");
-                    // --- Gdzieś w void loop() podczas odbierania danych UWB ---
+
+                        //  // DLA  Kotwicy (zostaje) przy zmianie na incjatora
+                        // uint8_t *dist_bytes = (uint8_t*)&distance; // Magia rzutowania!
+
+                        // tx_report_msg[REPORT_MSG_DIST_IDX] = dist_bytes[0];
+                        // tx_report_msg[REPORT_MSG_DIST_IDX + 1] = dist_bytes[1];
+                        // tx_report_msg[REPORT_MSG_DIST_IDX + 2] = dist_bytes[2];
+                        // tx_report_msg[REPORT_MSG_DIST_IDX + 3] = dist_bytes[3];
+
+                        // I Kotwica wysyła tx_report_msg!
+                        
+
+                    // ---TO ZOSTAJE NA TAGU  ---
                     if (distance > 0.0 && distance < 100.0) {
                         
                         // 1. Wrzucamy do filtra (on sam zdecyduje, czy pomiar ma sens fizyczny w czasie)
