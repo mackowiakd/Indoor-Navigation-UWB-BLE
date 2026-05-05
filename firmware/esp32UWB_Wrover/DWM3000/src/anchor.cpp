@@ -34,11 +34,10 @@ static dwt_config_t config = {
 // =========================================================================
 static uint8_t tx_poll_msg[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'P', 'O', 'L', '1', 0x21, 0, 0};
 static uint8_t rx_resp_msg[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'E', '1', '1', 0x10, 0x02, 0, 0, 0, 0};
-static uint8_t tx_final_msg[]  = {0x41, 0x88, 0, 0xCA, 0xDE, 'F', 'I', '1', '1', 0x23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-// Nowa ramka: REPORT (Od Kotwicy do Taga)
-// Zawiera znak 'D' (Distance) i 4 bajty na przeliczonego Floata (odległość)
-static uint8_t tx_report_msg[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'E', 'P', 'O', 'R', 'T', 0, 0, 0, 0, 0, 0};
-#define REPORT_MSG_DIST_IDX 11 // Od tego miejsca zaczynamy wpisywać 4 bajty odległości
+static uint8_t tx_final_msg[]  = {0x41, 0x88, 0, 0xCA, 0xDE, 'F', 'I', '1', '1', 0x23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}; 
+// Format ASCII: R P [ID_Kotwicy] [ID_Taga] [KOD_FUNKCJI 0x40]
+static uint8_t tx_report_msg[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'P', '1', '1', 0x40, 0, 0, 0, 0, 0, 0, 0};
+#define REPORT_MSG_DIST_IDX 11 // Cale miejsce od indeksu 11 jest czyste na naszego Floata!
 
 #define ALL_MSG_COMMON_LEN 10
 #define ALL_MSG_SN_IDX 2
@@ -59,14 +58,6 @@ static uint32_t status_reg = 0;
 
 extern dwt_txconfig_t txconfig_options;
 uint16_t my_anchor_address = 0x0001;
-
-// // Funkcja pomocnicza do wklejania znaczników czasu (Timestamps) w ramkę
-// static void final_msg_set_ts(uint8_t *ts_field, uint32_t ts) {
-//     for (int i = 0; i < 4; i++) {
-//         ts_field[i] = (uint8_t) ts;
-//         ts >>= 8;
-//     }
-// };
 
 
 

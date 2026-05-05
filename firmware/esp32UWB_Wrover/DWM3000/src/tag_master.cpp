@@ -204,6 +204,7 @@ void loop() {
     if (status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
         uint32_t frame_len;
         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
+        Serial.println("[TAG] Odebrano odpowiedź! Sprawdzam, czy to RESP...");
        
         //dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
         frame_len = dwt_read32bitreg(RX_FINFO_ID) & FRAME_LEN_MAX_EX;
@@ -214,6 +215,8 @@ void loop() {
         
         // RESP from anchor, sending FINAL
         if (memcmp(rx_buffer, rx_resp_msg, ALL_MSG_COMMON_LEN) == 0) {
+            Serial.println("[TAG] To jest poprawne RESP! Przygotowuję paczkę FINAL...");
+            
             uint32_t final_tx_time, poll_tx_ts, resp_rx_ts, final_tx_ts;
 
             poll_tx_ts = dwt_readtxtimestamplo32();
@@ -238,59 +241,72 @@ void loop() {
             // KRYTYCZNA ZMIANA: Wysyłamy FINAL, ale każemy radarowi znowu czekać! (DWT_RESPONSE_EXPECTED)
             dwt_setrxaftertxdelay(150); // Krótki czas na oddech
             dwt_setrxtimeout(RESP_delay);     // Czekamy na REPORT do 8ms
+            Serial.println("[TAG] Wysyłam FINAL. Czekam na REPORT z wynikiem...");
 
             // KROK 3: Wysyłamy ostateczną wiadomość FINAL OD RAZU po obliczeniach
             if (dwt_starttx(DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED) == DWT_SUCCESS) {
                 
                 // 3. CZEKAMY NA PACZKĘ "REPORT" OD KOTWICY!
-                while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {};
+                while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
+                    taskYIELD();
+                };
 
                 if (status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
+                   
                     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
                     frame_len = dwt_read32bitreg(RX_FINFO_ID) & FRAME_LEN_MAX_EX;
                     dwt_readrxdata(rx_buffer, frame_len, 0);
                     rx_buffer[ALL_MSG_SN_IDX] = 0;
 
-                 // Czy to jest REPORT?
-                if (memcmp(rx_buffer, tx_report_msg, ALL_MSG_COMMON_LEN) == 0) {
-                    float received_distance;
-                    memcpy(&received_distance, &rx_buffer[REPORT_MSG_DIST_IDX], 4);
-                    // I gotowe! Możemy to wrzucić do naszego filtra SmartUWBFilter!
-                    filterA1.addRawMeasurement(received_distance); 
+                     // Czy to jest REPORT?
+                    if (memcmp(rx_buffer, tx_report_msg, ALL_MSG_COMMON_LEN) == 0) {
+                        Serial.println("[TAG] Odebrano REPORT od Kotwicy! Rozpakowuję...");
 
-                        
+                        float received_distance;
+                        memcpy(&received_distance, &rx_buffer[REPORT_MSG_DIST_IDX], 4);
 
-                    // ---TO ZOSTAJE NA TAGU  ---
-                    if (distance > 0.0 && distance < 100.0) {
-                        
-                        // 1. Wrzucamy do filtra (on sam zdecyduje, czy pomiar ma sens fizyczny w czasie)
-                        filterA1.addRawMeasurement(distance);
+                        // I gotowe! Możemy to wrzucić do naszego filtra SmartUWBFilter!
+                        filterA1.addRawMeasurement(received_distance); 
 
-                        // 2. Sprawdzamy, czy zebrało się wystarczająco poprawnych danych i minął zadany czas
-                        float clean_distance;
-                        if (filterA1.isReadyToReport(clean_distance)) {
+                    
+                        // ---TO ZOSTAJE NA TAGU  ---
+                        if (received_distance > 0.0 && received_distance < 100.0) {
                             
-                            Serial.print("[GOTOWE DO BLE] Wyliczona odległość do A1: ");
-                            Serial.println(clean_distance);
+                            
+                            // 2. Sprawdzamy, czy zebrało się wystarczająco poprawnych danych i minął zadany czas
+                            float clean_distance;
+                            if (filterA1.isReadyToReport(clean_distance)) {
+                                
+                                Serial.print("[GOTOWE DO BLE] Wyliczona odległość do A1: ");
+                                Serial.println(clean_distance);
 
-                            // 3. TUTAJ AKTUALIZUJESZ ZMIENNĄ DLA BLUETOOTHA!
-                            UWB_dist = clean_distance;
-                            dA1 = 1;
+                                // 3. TUTAJ AKTUALIZUJESZ ZMIENNĄ DLA BLUETOOTHA!
+                                UWB_dist = clean_distance;
+                                dA1 = 1;
+                            }
+                        }else {
+                            Serial.println("[TAG] Błąd fizyki! Surowy dystans poza zakresem 0-100m.");
                         }
+                    } else {
+                        Serial.println("[TAG] To nie jest paczka REPORT. Zły nagłówek.");
                     }
-                }
-            } else {
+                } else {
                     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
-                    Serial.println("[ERR] Kotwica nie przysłała REPORTU na czas.");
+                    Serial.println("[TAG][BŁĄD] TIMEOUT 2: Kotwica nie przysłała paczki REPORT na czas!");
                 }
             } else {
-                Serial.println("[ERR] Za wolny! Nie zdążyłem wysłać FINAL.");
+                Serial.println("[TAG][BŁĄD] Za wolny procesor! Nie zdążyłem wysłać FINAL w oknie czasowym.");
             }
+        } else {
+            Serial.println("[TAG] Odebrano paczkę, ale to nie było RESP od Kotwicy 1.");
         }
     } else {
         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
-    }
-                
+        Serial.println("[TAG][BŁĄD] TIMEOUT 1: Kotwica nie odpowiedziała na pierwszego POLLa!");
+    };
+
+    frame_seq_nb++; // inkrementacja numeru sekwencyjnego dla kolejnych cykli
+                  
           
 
     // --- Rekonekcja BLE ---
