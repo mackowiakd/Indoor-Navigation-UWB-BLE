@@ -60,15 +60,15 @@ static uint32_t status_reg = 0;
 extern dwt_txconfig_t txconfig_options;
 uint16_t my_anchor_address = 0x0001;
 
-// Funkcja pomocnicza do wklejania znaczników czasu (Timestamps) w ramkę
-static void final_msg_set_ts(uint8_t *ts_field, uint32_t ts) {
-    for (int i = 0; i < 4; i++) {
-        ts_field[i] = (uint8_t) ts;
-        ts >>= 8;
-    }
-};
+// // Funkcja pomocnicza do wklejania znaczników czasu (Timestamps) w ramkę
+// static void final_msg_set_ts(uint8_t *ts_field, uint32_t ts) {
+//     for (int i = 0; i < 4; i++) {
+//         ts_field[i] = (uint8_t) ts;
+//         ts >>= 8;
+//     }
+// };
 
-// Pomocnik do wyciągania pełnych 40-bitów z układu radaru
+
 
 
 // =========================================================================

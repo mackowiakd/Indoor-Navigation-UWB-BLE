@@ -101,16 +101,10 @@ void loop() {
     dwt_setrxtimeout(0);
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
 
-    unsigned long wait_start = millis();
+    
 
     // 1. Zabezpieczona pętla nasłuchu z "Biciem Serca" (Heartbeat)
     while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_ERR))) {
-        
-        // Co 2 sekundy wypisz, że Tag wciąż żyje, żebyśmy wiedzieli, że się nie zawiesił
-        if (millis() - wait_start > 2000) {
-            Serial.println("[DEBUG] Eter UWB pusty. Antena Taga wciąż nasłuchuje...");
-            wait_start = millis();
-        }
        
     };
 
@@ -128,12 +122,12 @@ void loop() {
 
         rx_buffer[ALL_MSG_SN_IDX] = 0; // Usunięcie numeru sekwencyjnego do porównania
         
-        // ---- SPRAWDZAMY CO FAKTYCZNIE PRZYSZŁO ----
-        if (memcmp(rx_buffer, rx_poll_msg1, ALL_MSG_COMMON_LEN) == 0 && dA1 == 0) {
+        // ---- otrzymano POLL od taga ----
+        if (memcmp(rx_buffer, rx_poll_msg1, ALL_MSG_COMMON_LEN) == 0 ) {
             //Serial.println("[UWB] Otrzymano POLL od Kotwicy A1! Wysyłam odpowiedź...");
             
             uint32_t resp_tx_time1;
-            int ret1;
+
 
             poll_rx_ts = get_rx_timestamp_u64();
             resp_tx_time1 = (poll_rx_ts + (POLL_RX_TO_RESP_TX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;
@@ -145,84 +139,54 @@ void loop() {
             tx_resp_msg1[ALL_MSG_SN_IDX] = frame_seq_nb;
             dwt_writetxdata(sizeof(tx_resp_msg1), tx_resp_msg1, 0);
             dwt_writetxfctrl(sizeof(tx_resp_msg1), 0, 1);
-            //ret1 = dwt_starttx(DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED);
-            ret1 = dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
+            // Wysyła RESP i czekamy na FINAL
+            dwt_starttx(DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED);
 
-            if (ret1 != DWT_ERROR) {
-                while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {};
-                frame_seq_nb++;
+        }
 
-                if (status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
-                    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_TXFRS_BIT_MASK);
-                    frame_len = dwt_read32bitreg(RX_FINFO_ID) & FRAME_LEN_MAX_EX;
-                    if (frame_len <= RX_BUF_LEN) {
-                        dwt_readrxdata(rx_buffer, frame_len, 0);
-                    }
+           
+          // odebrano FINAL -> Liczymy i odsyłamy REPORT
+        else if (memcmp(rx_buffer, rx_final_msg1, ALL_MSG_COMMON_LEN) == 0) {
+            uint32_t poll_tx_ts, resp_rx_ts, final_tx_ts;
+            double Ra, Rb, Da, Db;
+            int64_t tof_dtu;
 
-                    rx_buffer[ALL_MSG_SN_IDX] = 0;
-                    if (memcmp(rx_buffer, rx_final_msg1, ALL_MSG_COMMON_LEN) == 0) {
-                        uint32_t poll_tx_ts, resp_rx_ts, final_tx_ts;
-                        double Ra, Rb, Da, Db;
-                        int64_t tof_dtu;
+            resp_tx_ts = get_tx_timestamp_u64();
+            final_rx_ts = get_rx_timestamp_u64();
 
-                        resp_tx_ts = get_tx_timestamp_u64();
-                        final_rx_ts = get_rx_timestamp_u64();
+            final_msg_get_ts(&rx_buffer[FINAL_MSG_POLL_TX_TS_IDX], &poll_tx_ts);
+            final_msg_get_ts(&rx_buffer[FINAL_MSG_RESP_RX_TS_IDX], &resp_rx_ts);
+            final_msg_get_ts(&rx_buffer[FINAL_MSG_FINAL_TX_TS_IDX], &final_tx_ts);
 
-                        final_msg_get_ts(&rx_buffer[FINAL_MSG_POLL_TX_TS_IDX], &poll_tx_ts);
-                        final_msg_get_ts(&rx_buffer[FINAL_MSG_RESP_RX_TS_IDX], &resp_rx_ts);
-                        final_msg_get_ts(&rx_buffer[FINAL_MSG_FINAL_TX_TS_IDX], &final_tx_ts);
+            Ra = (double)(resp_rx_ts - poll_tx_ts);
+            Rb = (double)((uint32_t)final_rx_ts - (uint32_t)resp_tx_ts);
+            Da = (double)(final_tx_ts - resp_rx_ts);
+            Db = (double)((uint32_t)resp_tx_ts - (uint32_t)poll_rx_ts);
+            tof_dtu = (int64_t)((Ra * Rb - Da * Db) / (Ra + Rb + Da + Db));
 
-                        Ra = (double)(resp_rx_ts - poll_tx_ts);
-                        Rb = (double)((uint32_t)final_rx_ts - (uint32_t)resp_tx_ts);
-                        Da = (double)(final_tx_ts - resp_rx_ts);
-                        Db = (double)((uint32_t)resp_tx_ts - (uint32_t)poll_rx_ts);
-                        tof_dtu = (int64_t)((Ra * Rb - Da * Db) / (Ra + Rb + Da + Db));
+            distance = (tof_dtu * DWT_TIME_UNITS) * SPEED_OF_LIGHT;
 
-                        tof = tof_dtu * DWT_TIME_UNITS;
-                        distance = tof * SPEED_OF_LIGHT;
+            Serial.printf("Policzyłem %.2fm! Wysyłam REPORT do Taga.\n", distance);
 
-                        // Wypiszmy ten sukces wielkimi literami!
-                        Serial.print(">>>>> SUKCES UWB! DYSTANS DO A1: ");
-                        Serial.print(distance);
-                        Serial.println(" metrów <<<<<");
+                // DLA  Kotwicy (zostaje) przy zmianie na incjatora
+            uint8_t *dist_bytes = (uint8_t*)&distance; // Magia rzutowania!
 
-                         // DLA  Kotwicy (zostaje) przy zmianie na incjatora
-                        uint8_t *dist_bytes = (uint8_t*)&distance; // Magia rzutowania!
+            tx_report_msg[REPORT_MSG_DIST_IDX] = dist_bytes[0];
+            tx_report_msg[REPORT_MSG_DIST_IDX + 1] = dist_bytes[1];
+            tx_report_msg[REPORT_MSG_DIST_IDX + 2] = dist_bytes[2];
+            tx_report_msg[REPORT_MSG_DIST_IDX + 3] = dist_bytes[3];
 
-                        tx_report_msg[REPORT_MSG_DIST_IDX] = dist_bytes[0];
-                        tx_report_msg[REPORT_MSG_DIST_IDX + 1] = dist_bytes[1];
-                        tx_report_msg[REPORT_MSG_DIST_IDX + 2] = dist_bytes[2];
-                        tx_report_msg[REPORT_MSG_DIST_IDX + 3] = dist_bytes[3];
-
-                       // I Kotwica wysyła tx_report_msg!
-                        
-
-                  
-                } else {
-                    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
-                    Serial.println("[ERR] Timeout radaru! Tag czekał na FINAL, ale Kotwica zamilkła.");
-                }
-            } else {
-                Serial.println("[ERR] Błąd układu! Nie udało się wysłać Ponga (starttx DWT_ERROR).");
-            }
-        } 
-        else {
-            // SZPIEG: Jeśli przyleci jakakolwiek inna ramka, wydrukuj jej bajty!
-            Serial.print("[SZPIEG] Złapano nieznaną ramkę UWB! Długość: ");
-            Serial.print(frame_len);
-            Serial.print(" bajtów. Zawartość: ");
-            for(int i=0; i<frame_len; i++) {
-                Serial.printf("%02X ", rx_buffer[i]);
-            }
-            Serial.println();
+            // I Kotwica wysyła tx_report_msg!
+            dwt_writetxdata(sizeof(tx_report_msg), tx_report_msg, 0);
+            dwt_writetxfctrl(sizeof(tx_report_msg), 0, 0);
+            dwt_starttx(DWT_START_TX_IMMEDIATE); // Odsyłamy gotowy wynik!
         }
         
-        if (dA1 == 1) {
-            dA1 = 0;
-        }
+        
+        
+     
 
     } else {
         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_ERR);
-        Serial.println("[ERR] Odebrano sygnał, ale ramka była fizycznie uszkodzona (szum/kolizja fal).");
     }
 }
