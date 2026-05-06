@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 # Konfiguracja dla lokalnego Dockera
 DB_CONFIG = {
     "dbname": "uwb_ble_db",
-    "user": "ania",
-    "password": "root",
+    "user": "domi",
+    "password": "1234",
     "host": "localhost",
     "port": "5432"
 }
@@ -47,20 +47,46 @@ def setup_and_generate_data():
     """)
 
     print("KROK 2: Wrzucanie wymiarów (Topologia i Urządzenia)...")
+
+    # 2A. Wydział dla HDiSED (zapisujemy wygenerowane ID do zmiennej aei_id)
     cur.execute("""
         INSERT INTO Dim_Topology (Location_ID, Building, Wing, Floor, Room_Name)
         VALUES (1, 'AEI', 'Lewe', 1, 'Korytarz Główny')
         ON CONFLICT (Location_ID) DO NOTHING;
     """)
+    aei_id = cur.fetchone()[0]
 
+   # 2B. Twój prawdziwy pokój (zapisujemy wygenerowane ID do zmiennej house_id)
+    cur.execute("""
+        INSERT INTO Dim_Topology (Building, Wing, Floor, Room_Name)
+        VALUES ('My house', 'Main', 1, 'Testing space')
+        RETURNING Location_ID;
+    """)
+    house_id = cur.fetchone()[0]
+
+    print("KROK 3: Przypisywanie urządzeń do odpowiednich ID...")
+    
+    # Urządzenie dla AEI (Fikcyjny ekspres)
     mac_coffee = 'aa:bb:cc:dd:ee:ff'
     cur.execute("""
         INSERT INTO Dim_IoT_Devices (MAC_Address, Device_Type, Location_ID, Semantic_Role, TX_Power_Config)
-        VALUES (%s, 'BLE_BEACON', 1, 'Ekspres do kawy', -59)
-        ON CONFLICT (MAC_Address) DO NOTHING;
-    """, (mac_coffee,))
+        VALUES (%s, 'BLE_BEACON', %s, 'Ekspres do kawy', -59);
+    """, (mac_coffee, aei_id))
 
-    print("KROK 3: Generowanie danych do Fact_Telemetry (Symulacja 90 dni)...")
+    # Twoje PRAWDZIWE urządzenia do inżynierki (Przypisane do My house)
+    my_real_devices = [
+        ('0x0001', 'UWB_ANCHOR', house_id, 'Kotwica UWB - Narożnik Lewy', None),
+        ('0x0002', 'UWB_ANCHOR', house_id, 'Kotwica UWB - Narożnik Prawy', None),
+        ('ff:ff:12:b1:64:d1', 'BLE_BEACON', house_id, 'Tag BLE - Desk', -59),
+        ('a8:03:2a:b8:ee:fa', 'BLE_BEACON', house_id, 'Tag BLE - Window', -59)
+    ]
+    
+    cur.executemany("""
+        INSERT INTO Dim_IoT_Devices (MAC_Address, Device_Type, Location_ID, Semantic_Role, TX_Power_Config)
+        VALUES (%s, %s, %s, %s, %s);
+    """, my_real_devices)
+
+    print("KROK 4: Generowanie symulacji baterii dla HDiSED (90 dni)...")
     start_date = datetime.now() - timedelta(days=90)
     base_rssi = -65 
 

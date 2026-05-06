@@ -15,7 +15,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
     # automatyczne API
-    postgrest:
+  postgrest:
     image: postgrest/postgrest:latest
     container_name: polsl_navigation_api
     restart: always
