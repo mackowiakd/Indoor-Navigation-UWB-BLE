@@ -213,10 +213,9 @@ void loop() {
         }
         rx_buffer[ALL_MSG_SN_IDX] = 0; // Usunięcie numeru sekwencyjnego do porównania- jakiego prownania??
         
-        // RESP from anchor, sending FINAL
+        // RESP from anchor deliverd, sending FINAL
         if (memcmp(rx_buffer, rx_resp_msg, ALL_MSG_COMMON_LEN) == 0) {
-            Serial.println("[TAG] To jest poprawne RESP! Przygotowuję paczkę FINAL...");
-            
+           
             uint32_t final_tx_time, poll_tx_ts, resp_rx_ts, final_tx_ts;
 
             poll_tx_ts = dwt_readtxtimestamplo32();
@@ -241,10 +240,14 @@ void loop() {
             // KRYTYCZNA ZMIANA: Wysyłamy FINAL, ale każemy radarowi znowu czekać! (DWT_RESPONSE_EXPECTED)
             dwt_setrxaftertxdelay(150); // Krótki czas na oddech
             dwt_setrxtimeout(RESP_delay);     // Czekamy na REPORT do 8ms
-            Serial.println("[TAG] Wysyłam FINAL. Czekam na REPORT z wynikiem...");
+          
 
-            // KROK 3: Wysyłamy ostateczną wiadomość FINAL OD RAZU po obliczeniach
+            // Sending FINAL and waiting for REPORT
             if (dwt_starttx(DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED) == DWT_SUCCESS) {
+
+                // >>> now we can print as task for uwb are already launched  <<<
+                Serial.println("[TAG] Poprawne RESP -> Wysłano FINAL.");
+                Serial.println("[TAG] Czekam na REPORT od Kotwicy...");
                 
                 // 3. CZEKAMY NA PACZKĘ "REPORT" OD KOTWICY!
                 while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
