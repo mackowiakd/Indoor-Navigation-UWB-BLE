@@ -61,7 +61,7 @@ extern dwt_txconfig_t txconfig_options;
 void setup() {
     Serial.begin(115200);
     delay(2000);
-    Serial.println("Startowanie systemu UWB + BLE...");
+   
 
     // Inicjalizacja magistrali SPI dla DW3000
     spiBegin(PIN_IRQ, PIN_RST);
@@ -199,17 +199,23 @@ void loop() {
                 } 
                 else {
                     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
+                    Serial.println("[KOTWICA][BŁĄD] TIMEOUT: Czekałem na FINAL, ale Tag zamilkł!");
                 }
             } 
             else {
                 dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_ERR);
+                Serial.println("[KOTWICA][BŁĄD] TIMEOUT: Czekałem na FINAL, ale Tag zamilkł!");
             }
         }
-        
+         
+        else {
+            Serial.println("[KOTWICA][SZPIEG] Przyleciała paczka, ale to nie jest mój POLL1.");
+        }
 
     } 
     else {
         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_ERR);
+        Serial.println("[KOTWICA][BŁĄD] Uszkodzona fizycznie fala radiowa (szum).");
     }
 
 };
