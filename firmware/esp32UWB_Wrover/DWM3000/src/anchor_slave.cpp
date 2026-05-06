@@ -30,12 +30,10 @@ static dwt_config_t config = {
 static uint8_t rx_poll_msg1[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'P', 'O', 'L', '1', 0x21, 0, 0 };
 static uint8_t tx_resp_msg1[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'E', DID, '1', 0x10, 0x02, 0, 0, 0, 0 };
 static uint8_t rx_final_msg1[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'F', 'I', DID, '1', 0x23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+// Format ASCII: R P [ID_Kotwicy] [ID_Taga] [KOD_FUNKCJI 0x40]
+static uint8_t tx_report_msg[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'P', '1', '1', 0x40, 0, 0, 0, 0, 0, 0, 0};
 
-// Nowa ramka: REPORT (Od Kotwicy do Taga)
-// Zawiera znak 'D' (Distance) i 4 bajty na przeliczonego Floata (odległość)
-static uint8_t tx_report_msg[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'E', 'P', 'O', 'R', 'T', 0, 0, 0, 0, 0, 0};
-#define REPORT_MSG_DIST_IDX 11 // Od tego miejsca zaczynamy wpisywać 4 bajty odległości
-
+#define REPORT_MSG_DIST_IDX 11 // Cale miejsce od indeksu 11 jest czyste na naszego Floata!
 #define ALL_MSG_COMMON_LEN 10
 #define ALL_MSG_SN_IDX 2
 #define FINAL_MSG_POLL_TX_TS_IDX 10
@@ -103,7 +101,7 @@ void loop() {
 
     
 
-    // 1. Zabezpieczona pętla nasłuchu z "Biciem Serca" (Heartbeat)
+    // 1. Zabezpieczona pętla nasłuchu - czekamy, aż coś przyleci do anteny (POLL od Taga)
     while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_ERR))) {
        
     };
@@ -124,69 +122,96 @@ void loop() {
         
         // ---- otrzymano POLL od taga ----
         if (memcmp(rx_buffer, rx_poll_msg1, ALL_MSG_COMMON_LEN) == 0 ) {
-            //Serial.println("[UWB] Otrzymano POLL od Kotwicy A1! Wysyłam odpowiedź...");
             
             uint32_t resp_tx_time1;
-
 
             poll_rx_ts = get_rx_timestamp_u64();
             resp_tx_time1 = (poll_rx_ts + (POLL_RX_TO_RESP_TX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;
             dwt_setdelayedtrxtime(resp_tx_time1);
+            //konfig czsu oczekiwania na FINAL od Taga 
             dwt_setrxaftertxdelay(RESP_TX_TO_FINAL_RX_DLY_UUS);
             dwt_setrxtimeout(FINAL_RX_TIMEOUT_UUS);
-            dwt_setpreambledetecttimeout(PRE_TIMEOUT);
+
+            dwt_setpreambledetecttimeout(PRE_TIMEOUT); // juz nie potrzeba??
 
             tx_resp_msg1[ALL_MSG_SN_IDX] = frame_seq_nb;
             dwt_writetxdata(sizeof(tx_resp_msg1), tx_resp_msg1, 0);
             dwt_writetxfctrl(sizeof(tx_resp_msg1), 0, 1);
-            // Wysyła RESP i czekamy na FINAL
-            dwt_starttx(DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED);
 
-        }
+            // Wysyła RESP i czekamy na FINAL, RESP musi zostac wyslane delayed, zeby timestampy sie zgadzaly
+            if (dwt_starttx(DWT_START_TX_DELAYED) == DWT_SUCCESS) {
+                // KRYTYCZNE: Czekamy, aż REPORT wyleci w eter!
+                while (!(dwt_read32bitreg(SYS_STATUS_ID) & SYS_STATUS_TXFRS_BIT_MASK)) {};
+                dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
+                
+                // ---- ETAP 2: CZEKAMY NA FINAL OD TAGA ----
+                while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {};
+
+                if (status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
+                    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
+                    frame_len = dwt_read32bitreg(RX_FINFO_ID) & FRAME_LEN_MAX_EX;
+                    if (frame_len <= RX_BUF_LEN) {
+                        dwt_readrxdata(rx_buffer, frame_len, 0);
+                    }
+                    rx_buffer[ALL_MSG_SN_IDX] = 0;
 
            
-          // odebrano FINAL -> Liczymy i odsyłamy REPORT
-        else if (memcmp(rx_buffer, rx_final_msg1, ALL_MSG_COMMON_LEN) == 0) {
-            uint32_t poll_tx_ts, resp_rx_ts, final_tx_ts;
-            double Ra, Rb, Da, Db;
-            int64_t tof_dtu;
+                    // odebrano FINAL -> Liczymy i odsyłamy REPORT
+                    if (memcmp(rx_buffer, rx_final_msg1, ALL_MSG_COMMON_LEN) == 0) {
+                        uint32_t poll_tx_ts, resp_rx_ts, final_tx_ts;
+                        double Ra, Rb, Da, Db;
+                        int64_t tof_dtu;
 
-            resp_tx_ts = get_tx_timestamp_u64();
-            final_rx_ts = get_rx_timestamp_u64();
+                        resp_tx_ts = get_tx_timestamp_u64();
+                        final_rx_ts = get_rx_timestamp_u64();
 
-            final_msg_get_ts(&rx_buffer[FINAL_MSG_POLL_TX_TS_IDX], &poll_tx_ts);
-            final_msg_get_ts(&rx_buffer[FINAL_MSG_RESP_RX_TS_IDX], &resp_rx_ts);
-            final_msg_get_ts(&rx_buffer[FINAL_MSG_FINAL_TX_TS_IDX], &final_tx_ts);
+                        final_msg_get_ts(&rx_buffer[FINAL_MSG_POLL_TX_TS_IDX], &poll_tx_ts);
+                        final_msg_get_ts(&rx_buffer[FINAL_MSG_RESP_RX_TS_IDX], &resp_rx_ts);
+                        final_msg_get_ts(&rx_buffer[FINAL_MSG_FINAL_TX_TS_IDX], &final_tx_ts);
 
-            Ra = (double)(resp_rx_ts - poll_tx_ts);
-            Rb = (double)((uint32_t)final_rx_ts - (uint32_t)resp_tx_ts);
-            Da = (double)(final_tx_ts - resp_rx_ts);
-            Db = (double)((uint32_t)resp_tx_ts - (uint32_t)poll_rx_ts);
-            tof_dtu = (int64_t)((Ra * Rb - Da * Db) / (Ra + Rb + Da + Db));
+                        Ra = (double)(resp_rx_ts - poll_tx_ts);
+                        Rb = (double)((uint32_t)final_rx_ts - (uint32_t)resp_tx_ts);
+                        Da = (double)(final_tx_ts - resp_rx_ts);
+                        Db = (double)((uint32_t)resp_tx_ts - (uint32_t)poll_rx_ts);
+                        tof_dtu = (int64_t)((Ra * Rb - Da * Db) / (Ra + Rb + Da + Db));
 
-            distance = (tof_dtu * DWT_TIME_UNITS) * SPEED_OF_LIGHT;
+                        distance = (tof_dtu * DWT_TIME_UNITS) * SPEED_OF_LIGHT;
 
-            Serial.printf("Policzyłem %.2fm! Wysyłam REPORT do Taga.\n", distance);
+                        Serial.printf("Policzyłem %.2fm! Wysyłam REPORT do Taga.\n", distance);
+                        float distance_float = (float)distance; // usng 32 float not 64 double
+                        uint8_t *dist_bytes = (uint8_t*)&distance_float; // rzutowanie zmiennej 32 bitwoej na tablice 4x 8-bitową, żeby wysłać przez UWB
 
-                // DLA  Kotwicy (zostaje) przy zmianie na incjatora
-            uint8_t *dist_bytes = (uint8_t*)&distance; // Magia rzutowania!
+                        tx_report_msg[REPORT_MSG_DIST_IDX] = dist_bytes[0];
+                        tx_report_msg[REPORT_MSG_DIST_IDX + 1] = dist_bytes[1];
+                        tx_report_msg[REPORT_MSG_DIST_IDX + 2] = dist_bytes[2];
+                        tx_report_msg[REPORT_MSG_DIST_IDX + 3] = dist_bytes[3];
 
-            tx_report_msg[REPORT_MSG_DIST_IDX] = dist_bytes[0];
-            tx_report_msg[REPORT_MSG_DIST_IDX + 1] = dist_bytes[1];
-            tx_report_msg[REPORT_MSG_DIST_IDX + 2] = dist_bytes[2];
-            tx_report_msg[REPORT_MSG_DIST_IDX + 3] = dist_bytes[3];
+                        // I Kotwica wysyła tx_report_msg!
+                        dwt_writetxdata(sizeof(tx_report_msg), tx_report_msg, 0);
+                        dwt_writetxfctrl(sizeof(tx_report_msg), 0, 0);
+                        if (dwt_starttx(DWT_START_TX_IMMEDIATE) == DWT_SUCCESS) {
+                            // KRYTYCZNE: Czekamy, aż REPORT wyleci w eter!
+                            while (!(dwt_read32bitreg(SYS_STATUS_ID) & SYS_STATUS_TXFRS_BIT_MASK)) {};
+                            dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
+                        }
+                    };
 
-            // I Kotwica wysyła tx_report_msg!
-            dwt_writetxdata(sizeof(tx_report_msg), tx_report_msg, 0);
-            dwt_writetxfctrl(sizeof(tx_report_msg), 0, 0);
-            dwt_starttx(DWT_START_TX_IMMEDIATE); // Odsyłamy gotowy wynik!
+                } 
+                else {
+                    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
+                }
+            } 
+            else {
+                dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_ERR);
+            }
         }
         
-        
-        
-     
 
-    } else {
+    } 
+    else {
         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_ERR);
     }
-}
+
+};
+                       
+        
