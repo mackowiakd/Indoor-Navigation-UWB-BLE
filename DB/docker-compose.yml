@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: polsl_navigation_db
+    restart: always
+    environment:
+      POSTGRES_USER: domi
+      POSTGRES_PASSWORD: 1234
+      POSTGRES_DB: uwb_ble_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    # automatyczne API
+    postgrest:
+    image: postgrest/postgrest:latest
+    container_name: polsl_navigation_api
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      PGRST_DB_URI: postgres://domi:1234@postgres:5432/uwb_ble_db
+      PGRST_DB_SCHEMA: public
+      PGRST_DB_ANON_ROLE: domi # Dla prostoty prototypu, pozwalamy na odczyt każdemu
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
