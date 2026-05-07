@@ -48,7 +48,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
-    
+
     // MQTT Dependencies
     implementation(libs.paho.mqtt)
     implementation(libs.paho.android)
@@ -61,4 +61,9 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+    // Retrofit do komunikacji z REST API
+    implementation("com.squareup.retrofit2:retrofit:2.9.0")
+    // Gson do zamiany JSON-a na obiekty Kotlina
+    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
 }

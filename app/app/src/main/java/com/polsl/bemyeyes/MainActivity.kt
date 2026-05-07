@@ -21,7 +21,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.polsl.bemyeyes.navigation.*
+import com.polsl.bemyeyes.navigation.dataBase.RetrofitClient
 import com.polsl.bemyeyes.ui.theme.BeMyEyesTheme
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -31,7 +34,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var bleManager: BleConnectionManager
 
     // Stan trzymający logi, obserwowany przez UI (Jetpack Compose)
-    private val debugLogs = mutableStateListOf<String>()
+    protected val debugLogs = mutableStateListOf<String>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,8 +55,10 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             BeMyEyesTheme {
+                val scope = rememberCoroutineScope()
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     NavigationScreen(
+
                         modifier = Modifier.padding(innerPadding),
                         logs = debugLogs,
                         onStartNavigation = { targetId ->
@@ -63,7 +68,32 @@ class MainActivity : ComponentActivity() {
                         onDisconnect = { // <--- NOWA AKCJA
                         bleManager.disconnect()
                         debugLogs.add(0, "🛑 Wymuszono rozłączenie (Manual)")
-                         }
+                         },
+                        onTestApiClick = { // <--- TUTAJ ODBIERAMY KLIKNIĘCIE I ODPALAMY API
+                            scope.launch {
+                                try {
+                                    // Dodajemy na początek listy (indeks 0), żeby było na górze konsoli
+                                    debugLogs.add(0, "📡 Pobieram dane dla Location ID = 2...")
+
+                                    val devices =
+                                        RetrofitClient.apiService.getDevicesByLocation("eq.2")
+
+                                    if (devices.isEmpty()) {
+                                        debugLogs.add(0, "⚠️ Brak urządzeń w tej lokalizacji.")
+                                    } else {
+                                        devices.forEach { device ->
+                                            debugLogs.add(
+                                                0,
+                                                "✅ API Znalazło: ${device.semanticRole} (${device.macAddress})"
+                                            )
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    debugLogs.add(0, "❌ BŁĄD API: ${e.message}")
+                                    e.printStackTrace()
+                                }
+                            }
+                        }
                     )
                 }
             }
@@ -97,7 +127,10 @@ fun NavigationScreen(
     modifier: Modifier = Modifier,
     logs: List<String>,
     onStartNavigation: (String) -> Unit,
-    onDisconnect: () -> Unit
+    onDisconnect: () -> Unit,
+    onTestApiClick: () -> Unit // <--- NOWY PARAMETR (Callback)
+
+
 ) {
     Column(
         modifier = modifier
@@ -159,8 +192,18 @@ fun NavigationScreen(
         ) {
             Text("Nawiguj: Ekspres do kawy (BLE)")
         }
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Button(
+            onClick = onTestApiClick, // <--- PRZYCISK TYLKO KRZYCZY "KLIKNIĘTO MNIE!"
+            modifier = Modifier.fillMaxWidth().height(60.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color.Magenta)
+        ) {
+            Text("Testuj API (Location 2)")
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
+
 
         // KONSOLA DEBUG (odpowiednik nRF Connect)
         Text("Konsola Debugowania BLE:", style = MaterialTheme.typography.labelLarge)
