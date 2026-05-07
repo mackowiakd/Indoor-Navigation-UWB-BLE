@@ -324,6 +324,6 @@ void loop() {
         }
         lastReconnectCheck = millis();
     }
-    // GŁÓWNY ODDECH DLA SYSTEMU (Odpytujemy Kotwice np. 10 razy na sekundę)
-    delay(100);
+   
+    delay(500);
 }
