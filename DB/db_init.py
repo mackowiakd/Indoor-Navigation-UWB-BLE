@@ -50,9 +50,9 @@ def setup_and_generate_data():
 
     # 2A. Wydział dla HDiSED (zapisujemy wygenerowane ID do zmiennej aei_id)
     cur.execute("""
-        INSERT INTO Dim_Topology (Location_ID, Building, Wing, Floor, Room_Name)
-        VALUES (1, 'AEI', 'Lewe', 1, 'Korytarz Główny')
-        ON CONFLICT (Location_ID) DO NOTHING;
+        INSERT INTO Dim_Topology (Building, Wing, Floor, Room_Name)
+        VALUES ('AEI', 'Lewe', 1, 'Korytarz Główny')
+        RETURNING Location_ID;
     """)
     aei_id = cur.fetchone()[0]
 
