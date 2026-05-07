@@ -6,7 +6,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 object RetrofitClient {
     // ⚠️ TUTAJ WPISZ ADRES IP SWOJEGO LAPTOPA ⚠️
     // Pamiętaj o ukośniku na samym końcu!
-    private const val BASE_URL = "http://192.168.1.X:3000/"
+    private const val BASE_URL = "http://192.168.1.83:3000/"
 
     val apiService: TopologyApiService by lazy {
         Retrofit.Builder()
