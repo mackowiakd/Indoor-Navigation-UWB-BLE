@@ -137,9 +137,11 @@ void loop() {
             tx_resp_msg1[ALL_MSG_SN_IDX] = frame_seq_nb;
             dwt_writetxdata(sizeof(tx_resp_msg1), tx_resp_msg1, 0);
             dwt_writetxfctrl(sizeof(tx_resp_msg1), 0, 1);
+            Serial.println("\n[KOTWICA] Usłyszałem POLL! Przygotowuję RESP...");
 
-            // Wysyła RESP i czekamy na FINAL, RESP musi zostac wyslane delayed, zeby timestampy sie zgadzaly
-            if (dwt_starttx(DWT_START_TX_DELAYED) == DWT_SUCCESS) {
+            // Wysyła RESP i czekamy na FINAL, RESP musi zostac wyslane delayed,
+            // OR z maska DWT_RESPONSE_EXPECTED, zeby od razu po wyslaniu przejsc w tryb nasluchiwania na FINALa
+            if (dwt_starttx(DWT_START_TX_DELAYED| DWT_RESPONSE_EXPECTED) == DWT_SUCCESS) {
                 // KRYTYCZNE: Czekamy, aż REPORT wyleci w eter!
                 while (!(dwt_read32bitreg(SYS_STATUS_ID) & SYS_STATUS_TXFRS_BIT_MASK)) {};
                 dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
@@ -204,7 +206,7 @@ void loop() {
             } 
             else {
                 dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_ERR);
-                Serial.println("[KOTWICA][BŁĄD] TIMEOUT: Czekałem na FINAL, ale Tag zamilkł!");
+                Serial.println("[KOTWICA][BŁĄD] Procesor nie zdążył wystrzelić paczki RESP!");
             }
         }
          
