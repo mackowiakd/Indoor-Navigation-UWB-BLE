@@ -123,15 +123,21 @@ class BleConnectionManager(
             if (data != null) {
                 val payload = String(data, StandardCharsets.UTF_8)
                 postLog("📡 RX: $payload")
+
                 extractProximityData(payload)
             }
         }
     }
-
+    //@TODO metoda Notify/send do ESP (lista urzadzen z  danego obszaru)
+    // data from DB must be already cached (new file/ struct for storing it?
+    //
     private fun extractProximityData(payload: String) {
         try {
             // Nowa logika w Androidzie:
             val records = payload.split(";")
+            //@TODO fukcja do walidacji czy dotarlismy odpowiednio blisko granciznego taga BLE
+            // if (trigger ble)
+            //      evoke Notify with new list (selected from cached DB)
             for (record in records) {
                 val parts = record.trim().split(":")
                 if (parts.size == 2) {

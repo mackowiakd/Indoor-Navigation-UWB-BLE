@@ -39,7 +39,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
+        //@TODO evoke fun to downloead data from DB into local cache (like singleton RAM file?)
         topologyDatabase = BuildingTopologyDatabase()
         speechService = AccessibilitySpeechService(this)
         routingEngine = NavigationRoutingEngine(topologyDatabase, speechService)
