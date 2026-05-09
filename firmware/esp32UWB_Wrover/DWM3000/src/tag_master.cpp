@@ -29,7 +29,8 @@ NimBLEScan* pBLEScan;
 TaskHandle_t TaskNotifyHandle= NULL;
 TaskHandle_t TaskScanHandle=NULL;
 // Tworzymy filtr: Max prędkość obiektu 3.0 m/s, odchudzamy strumień danych do aktualizacji co 300 ms (ok. 3Hz)
-SmartUWBFilter filterA1(3.0, 300);
+std::vector<SmartUWBFilter> filters(8, SmartUWBFilter(3.0, 300)); // Jeden filtr na każdego aktywnego tag BLE
+
 
 
 
@@ -179,9 +180,10 @@ void setup() {
 // =========================================================================
 void loop() {
     // Odpytujemy każdą Kotwicę po kolei
+
     for (uint8_t i = 0; i < appData.getUwbAnchorCount(); i++) {
         char target_id = appData.getUwbAnchorId(i);
-        
+       
         // 1. Podmiana adresata w ramkach!
         tx_poll_msg[8]   = target_id;
         rx_resp_msg[7]   = target_id;
@@ -277,7 +279,11 @@ void loop() {
                             memcpy(&received_distance, &rx_buffer[REPORT_MSG_DIST_IDX], 4);
 
                             // I gotowe! Możemy to wrzucić do naszego filtra SmartUWBFilter!
-                            filterA1.addRawMeasurement(received_distance); 
+                            
+                            if (i >= filters.size()) {
+                               filters.emplace_back(3.0, 300); // Jeśli z jakiegoś powodu mamy więcej kotwic niż filtrów, tworzymy nowy filtr "w locie"   
+                            }
+                            filters[i].addRawMeasurement(received_distance); // dodajemy do odpowiedniego filtra dla tej kotwicy 
 
                         
                             // ---TO ZOSTAJE NA TAGU  ---
@@ -286,7 +292,7 @@ void loop() {
                                 
                                 // 2. Sprawdzamy, czy zebrało się wystarczająco poprawnych danych i minął zadany czas
                                 float clean_distance;
-                                if (filterA1.isReadyToReport(clean_distance)) {
+                                if (filters[i].isReadyToReport(clean_distance)) {
                                     
                                     Serial.print("[GOTOWE DO BLE] Wyliczona odległość do A1: ");
                                     Serial.println(clean_distance);
