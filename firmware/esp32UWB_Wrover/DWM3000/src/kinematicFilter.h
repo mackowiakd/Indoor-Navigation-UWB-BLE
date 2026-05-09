@@ -1,6 +1,17 @@
 #pragma once
 #include <Arduino.h>
 
+//RSSI-based kinematic filter for UWB distance measurements
+
+const int TX_POWER = -60;
+const float N_FACTOR = 2.5;
+const float EMA_ALPHA = 0.15;
+
+float calculateDistance(int rssi) {
+    return pow(10.0, ((float)TX_POWER - rssi) / (10.0 * N_FACTOR));
+}
+
+//uwb filter, który będzie działał na tagu i "odchudzał" strumień danych z DW3000, żeby nie wysyłać co 100ms surowych pomiarów, tylko np. co 300ms już przefiltrowane i uśrednione dane do BLE.
 class SmartUWBFilter {
   private:
     float max_speed_mps;     // Maksymalna prędkość w metrach na sekundę (m/s)
