@@ -298,13 +298,14 @@ void loop() {
                                 float clean_distance;
                                 if (filters[i].isReadyToReport(clean_distance)) {
 
-                                    Serial.print("[TAG] UWB Dystans do Kotwicy ");
+                                    Serial.print("[TAG] UWB Dystans do Kotwicy z id");
                                     Serial.print(target_id);
+                                    Serial.print(": ");
                                     Serial.println(clean_distance);
 
                                     // 3. TUTAJ AKTUALIZUJESZ ZMIENNĄ DLA BLUETOOTHA!
                                     UWB_dist = clean_distance;
-                                    dA1 = t;
+                                    dA1 = true; // flaga, że mamy już pomiar od A1 (żeby nie mieszać danych z różnych cykli)
                                 }
                             }else {
                                 Serial.println("[TAG] Błąd fizyki! Surowy dystans poza zakresem 0-100m.");
