@@ -2,7 +2,7 @@
 #include "config.h"
 #include <Arduino.h>
 #include "kinematicFilter.h"
-#include "DB/app_data.h"
+#include "app_data.h"
 // =========================================================================
 // KONFIGURACJA BLE (NimBLE)
 // =========================================================================
@@ -182,19 +182,23 @@ void loop() {
     // Odpytujemy każdą Kotwicę po kolei
 
     for (uint8_t i = 0; i < appData.getUwbAnchorCount(); i++) {
-        char target_id = appData.getUwbAnchorId(i);
+        uint8_t target_id = appData.getUwbAnchorId(i);
        
-        // 1. Podmiana adresata w ramkach!
-        tx_poll_msg[8]   = target_id;
-        rx_resp_msg[7]   = target_id;
-        tx_final_msg[7]  = target_id;
-        tx_report_msg[7] = target_id;
+        tx_poll_msg[8]   = target_id; // Kogo wołam (Kotwica)
+        rx_resp_msg[7]   = target_id; // Od kogo czekam na odp (Kotwica)
+        tx_final_msg[7]  = target_id; // Do kogo wysyłam FINAL (Kotwica)
+        tx_report_msg[7] = target_id; // Od kogo czekam na raport (Kotwica)
+
+        // TWOJE ID TAGA NA INDEKSIE 8 (Zawsze równe 1)
+        rx_resp_msg[8]   = 1;
+        tx_final_msg[8]  = 1;
+        tx_report_msg[8] = 1;
     
         // KROK 1: Wysyłamy wiadomość POLL
         tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
         dwt_writetxdata(sizeof(tx_poll_msg), tx_poll_msg, 0);
-        dwt_writetxfctrl(sizeof(tx_poll_msg), 0, 1); //  czy ta 
+        dwt_writetxfctrl(sizeof(tx_poll_msg), 0, 1); 
 
         // KRYTYCZNA ZMIANA: Zabezpieczenie przed zawieszeniem!
         // Ustawiamy, jak długo Kotwica ma czekać na Ponga (np. 3 milisekundy)
@@ -293,8 +297,10 @@ void loop() {
                                 // 2. Sprawdzamy, czy zebrało się wystarczająco poprawnych danych i minął zadany czas
                                 float clean_distance;
                                 if (filters[i].isReadyToReport(clean_distance)) {
-                                    
-                                    Serial.print("[GOTOWE DO BLE] Wyliczona odległość do A1: ");
+
+                                    char bufor[50]; 
+                                    sprintf(bufor, "[GOTOWE DO BLE] Wyliczona odległość do Kotwicy %d: ", target_id);
+                                    Serial.print(bufor);
                                     Serial.println(clean_distance);
 
                                     // 3. TUTAJ AKTUALIZUJESZ ZMIENNĄ DLA BLUETOOTHA!
