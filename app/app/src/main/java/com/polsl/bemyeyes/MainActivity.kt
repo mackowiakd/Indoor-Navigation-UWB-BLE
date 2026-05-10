@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.lifecycleScope
 import com.polsl.bemyeyes.navigation.*
 import com.polsl.bemyeyes.navigation.dataBase.RetrofitClient
 import com.polsl.bemyeyes.ui.theme.BeMyEyesTheme
@@ -50,6 +51,22 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 debugLogs.add(0, nowaWiadomosc) // Najnowsze na samej górze
                 if (debugLogs.size > 50) debugLogs.removeAt(debugLogs.size - 1) // Pamiętamy tylko 50 ostatnich
+            }
+        }
+        // W MainActivity.kt
+        lifecycleScope.launch {
+            try {
+                debugLogs.add(0, "📡 Pobieram całą topologię z bazy do Cache'u...")
+
+                // Zauważ, że pobieram getAllDevices(), a nie tylko jedno piętro!
+                // Trzymamy cały budynek w RAMie telefonu na wypadek utraty Wi-Fi.
+                val allDevices = RetrofitClient.apiService.getAllDevices()
+
+                topologyDatabase.cachedDevices = allDevices
+                debugLogs.add(0, "✅ Zapisano ${allDevices.size} urządzeń w pamięci podręcznej RAM.")
+
+            } catch (e: Exception) {
+                debugLogs.add(0, "❌ BŁĄD API: Nie udało się pobrać topologii.")
             }
         }
 
