@@ -1,5 +1,7 @@
 package com.polsl.bemyeyes.navigation
 
+import com.polsl.bemyeyes.navigation.dataBase.IoTDevice
+
 // 1. Enumy w Kotlinie
 enum class WingIdentifier {
     WING_LEFT, WING_RIGHT
@@ -47,4 +49,18 @@ class BuildingTopologyDatabase {
         // Zamiast długiego łańcucha (== 0 || == 1 || ...), sprawdzamy czy wartość jest w zbiorze
         return floorLevel in setOf(0, 1, 3, 5, 7)
     }
+
+    // To jest nasz "Singleton w RAM". Zapiszemy tu całą bazę po starcie apki.
+    var cachedDevices: List<IoTDevice> = emptyList()
+
+    // Szybka funkcja do wyciągania triggerów (żeby łatwo sprawdzać, czy jesteśmy przy schodach)
+    fun getBoundaryTriggers(): List<IoTDevice> {
+        return cachedDevices.filter { it.semanticRole.contains("TRIGGER") }
+    }
+
+    // Funkcja do pobierania urządzeń na konkretne piętro
+    fun getDevicesForLocation(locationId: Int): List<IoTDevice> {
+        return cachedDevices.filter { it.locationId == locationId }
+    }
+
 }
