@@ -298,14 +298,13 @@ void loop() {
                                 float clean_distance;
                                 if (filters[i].isReadyToReport(clean_distance)) {
 
-                                    char bufor[50]; 
-                                    sprintf(bufor, "[GOTOWE DO BLE] Wyliczona odległość do Kotwicy %d: ", target_id);
-                                    Serial.print(bufor);
+                                    Serial.print("[TAG] UWB Dystans do Kotwicy ");
+                                    Serial.print(target_id);
                                     Serial.println(clean_distance);
 
                                     // 3. TUTAJ AKTUALIZUJESZ ZMIENNĄ DLA BLUETOOTHA!
                                     UWB_dist = clean_distance;
-                                    dA1 = 1;
+                                    dA1 = t;
                                 }
                             }else {
                                 Serial.println("[TAG] Błąd fizyki! Surowy dystans poza zakresem 0-100m.");
