@@ -132,4 +132,25 @@ class NavigationRoutingEngine(
         // String Interpolation: zamiast + zmienna + "tekst", wrzucamy zmienną prosto do cudzysłowu z dolarem!
         speechService.announceBackground("Mijasz ${current.humanReadableName}")
     }
+
+    fun processScannedDevice(macAddress: String, rssi: Double):Boolean {
+        // 1. Sprawdzamy, czy przeskanowany MAC to nasz Boundary Trigger
+        val triggers = topologyDatabase.getBoundaryTriggers()
+        val matchedTrigger = triggers.find { it.macAddress == macAddress }
+
+        // 2. Jeśli to trigger i jesteśmy blisko (np. mocniej niż -60 dBm)
+        if (matchedTrigger != null && rssi > -60.00) {
+            println("🔥 WYKRYTO STREFĘ GRANICZNĄ: ${matchedTrigger.semanticRole}")
+
+            // 3. Logika zmiany piętra (np. jeśli trigger to winda na 2. piętrze,
+            // ładujemy nowe kotwice i tagi dla Location_ID = 2)
+            val newLocationId = matchedTrigger.locationId
+            val devicesForNewFloor = topologyDatabase.getDevicesForLocation(newLocationId)
+
+            // 4. Mówimy listonoszowi, żeby wysłał nową listę do ESP!
+           // bleManager.sendDeviceListToEsp(devicesForNewFloor)
+            return true
+        }
+        return false
+    }
 }

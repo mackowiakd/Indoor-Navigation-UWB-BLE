@@ -37,6 +37,8 @@ class BleConnectionManager(
         // NOWE: UUID uszu ESP32
         val FILTER_CHAR_UUID: UUID = UUID.fromString("c0de0001-feed-4688-b7f5-ea07361b26a8")
 
+        var update_dev_list: Boolean=false;
+
 
 
         // Twoja lista testowa (Mock) - to może docelowo przychodzić z bazy
@@ -145,9 +147,14 @@ class BleConnectionManager(
                     val dist = parts[1].trim().toDoubleOrNull()
 
                     if (dist != null) {
-                        //wywolujemy glowny watek UI aby wyswietli dane
-                        android.os.Handler(android.os.Looper.getMainLooper()).post {
-                            routingEngine.processNewTelemetryData(id, dist)
+                        //
+                        if(update_dev_list=routingEngine.processScannedDevice(id, dist)) {
+                            //bleManager.sendDeviceListToEsp(devicesForNewFloor)
+                        }
+                            //wywolujemy glowny watek UI aby wyswietli dane
+                            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                routingEngine.processNewTelemetryData(id, dist)
+
                         }
                     }
                     else {
