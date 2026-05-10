@@ -25,7 +25,7 @@ static dwt_config_t config = {
 };
 #define TX_ANT_DLY 16385
 #define RX_ANT_DLY 16385
-#define DID 1       // ID tej konkretnej kotwicy (np. 2)
+#define DID 2       // ID tej konkretnej kotwicy (np. 2)
 #define TAG_ID 1    // ID Taga, z którym testujemy układ (w przyszłości Kotwica sama to odczyta z POLLa!)
 
 // Indeksy:                       0     1   2    3     4    5    6    7       8       9
@@ -33,7 +33,6 @@ static uint8_t rx_poll_msg1[]  = {0x41, 0x88, 0, 0xCA, 0xDE, 'P', 'O', 'L',   DI
 static uint8_t tx_resp_msg1[]  = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'E',  DID,  TAG_ID, 0x10, 0x02, 0, 0, 0, 0};
 static uint8_t rx_final_msg1[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'F', 'I',  DID,  TAG_ID, 0x23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-// Zauważ, że tu usunąłem '2', '2' i wstawiłem czyste zmienne!
 static uint8_t tx_report_msg[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'P',  DID,  TAG_ID, 0x40, 0, 0, 0, 0, 0, 0, 0};
 
 #define REPORT_MSG_DIST_IDX 11 // Cale miejsce od indeksu 11 jest czyste na naszego Floata!
@@ -53,7 +52,7 @@ static uint32_t status_reg = 0;
 
 static uint64_t poll_rx_ts, resp_tx_ts, final_rx_ts;
 static double tof, distance;
-int dA1 = 0; // flaga, czy mamy już pomiar od A1 (żeby nie mieszać danych z różnych cykli)
+
 extern dwt_txconfig_t txconfig_options;
 
 
