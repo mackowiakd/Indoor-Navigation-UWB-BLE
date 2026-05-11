@@ -9,6 +9,9 @@ import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.util.Log
+import com.polsl.bemyeyes.navigation.dataBase.IoTDevice
+import com.polsl.bemyeyes.navigation.dataBase.RetrofitClient
+import com.polsl.bemyeyes.navigation.dataBase.TopologyApiService
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 
@@ -85,6 +88,8 @@ class BleConnectionManager(
             }
         }
 
+
+        //truning NOTIFY updates ON
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 // Używamy bezpiecznego wywołania (?.) typowego dla Kotlina
@@ -102,13 +107,6 @@ class BleConnectionManager(
                         postLog("🔔 Powiadomienia (Notify) AKTYWNE!")
                     }
 
-
-                    //   czy na pewno w tej fukcji odbywa sie wysylka? bo to wyglada jak jendorazowa fukcji do wykrywania polaczenie BLE
-                    //   a nie skewencyjej oblusgi odbior/ wysylki danych
-
-                    postLog("⚙️ Wgrywam startowy filtr adresów MAC...")
-
-                   sendFilterToEsp() // Wywołanie wyśle zhardcodowaną listę z 'companion object'
                 }
 
              else {
@@ -116,6 +114,7 @@ class BleConnectionManager(
             }
             }
         }
+
 
         // Ta metoda odbiera dane. Adnotacja Deprecated wynika z faktu, że w najnowszym Androidzie 13+
         // dodano nową sygnaturę tej metody, ale ta stara nadal świetnie działa w ramach kompatybilności wstecznej.
@@ -148,8 +147,10 @@ class BleConnectionManager(
 
                     if (dist != null) {
                         //
-                        if(update_dev_list=routingEngine.processScannedDevice(id, dist)) {
-                            //bleManager.sendDeviceListToEsp(devicesForNewFloor)
+                        if(update_dev_list==routingEngine.processScannedDevice(id, dist)) {
+
+                            // SendFiltertoEsp() with list from processScannedDevice
+                            //or is it underhood operation ? but i should trigger it smhw afetr list updates
                         }
                             //wywolujemy glowny watek UI aby wyswietli dane
                             android.os.Handler(android.os.Looper.getMainLooper()).post {
@@ -169,14 +170,18 @@ class BleConnectionManager(
         }
     }
 
-    fun sendFilterToEsp() {
+    fun sendFilterToEsp(devices: List<IoTDevice>) {
         // 1. Upewniamy się, że mamy połączenie i znajdujemy naszą "rurę"
         val gatt = connectedGatt ?: return
         val service = gatt.getService(SERVICE_UUID) ?: return
         val filterChar = service.getCharacteristic(FILTER_CHAR_UUID) ?: return
 
-        // 2. Sklejamy listę: "mac1;mac2"
-        val payload = MOCK_MAC_LIST.joinToString(";")
+        // 1. Tworzymy lekki string z samymi adresami MAC oddzielonymi średnikami
+        val macListString = devices.joinToString(separator = ";") { it.macAddress }
+
+        // Dodajemy jakiś znak początku/końca np. "LIST:..." żeby ESP wiedziało, co odbiera
+        val payload = "U:$macListString"
+        // przed mac ble dodac "B:"
 
         // 3. Wkładamy do rury i wysyłamy
         filterChar.value = payload.toByteArray(Charsets.UTF_8)
