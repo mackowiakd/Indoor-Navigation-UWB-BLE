@@ -133,6 +133,8 @@ class NavigationRoutingEngine(
         speechService.announceBackground("Mijasz ${current.humanReadableName}")
     }
 
+    //musi przekazac jakos liste do BLE managera
+    // zalozeniem ze pusta lista oznacza warunek FALSE
     fun processScannedDevice(macAddress: String, rssi: Double):Boolean {
         // 1. Sprawdzamy, czy przeskanowany MAC to nasz Boundary Trigger
         val triggers = topologyDatabase.getBoundaryTriggers()
