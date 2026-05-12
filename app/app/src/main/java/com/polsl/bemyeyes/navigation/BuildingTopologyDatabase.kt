@@ -26,6 +26,7 @@ data class AnchorNode(
 class BuildingTopologyDatabase {
 
     // 3. Niezmienna mapa inicjalizowana od razu (bez użycia 'put' i 'new')
+    //@TODO powinna pobrac z aktualnej listy devices jakie to pietro i na tej podstawie wystawic opcje nawigacji
     private val anchorRegistry: Map<String, AnchorNode> = mapOf(
 
         // Makronawigacja (Oryginalne węzły UWB/MQTT z Twojego kodu)
