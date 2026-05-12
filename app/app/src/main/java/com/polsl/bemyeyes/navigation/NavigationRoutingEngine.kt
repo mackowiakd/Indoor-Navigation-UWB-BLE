@@ -1,12 +1,13 @@
 package com.polsl.bemyeyes.navigation
 
+import com.polsl.bemyeyes.navigation.dataBase.IoTDevice
 import kotlin.math.roundToInt
 
 /**
  * Silnik analizujący stany przejść grafu budynku oraz dystrybuujący komendy głosowe.
  */
 class NavigationRoutingEngine(
-    private val topologyDatabase: BuildingTopologyDatabase,
+    private val buildingTopologyDB: BuildingTopologyDatabase,
     private val speechService: AccessibilitySpeechService // Upewnij się, że ta klasa istnieje
 ) {
 
@@ -21,13 +22,27 @@ class NavigationRoutingEngine(
     private var lastPassAnnouncementTimeMs: Long = 0
     private val ANNOUNCEMENT_COOLDOWN_MS = 8000L // 8 sekund całkowitej ciszy dla "mijania"
 
+    private var currentLocationId: Int? = null    //Zmienna pamiętająca, na którym piętrze / w jakim pokoju jesteśmy
+
     companion object {
         private const val PASSING_THRESHOLD_METERS = 1.5
     }
 
+    // W NavigationRoutingEngine.kt
+    fun getNavigationMenu(currentLocationId: Int?): Pair<List<IoTDevice>, List<IoTDevice>> {
+        val all = buildingTopologyDB.cachedDevices
+
+        // Mikro: Tylko to, co jest tam, gdzie ja (jeśli wiem gdzie jestem)
+        val micro = all.filter { it.locationId == currentLocationId }
+
+        // Makro: Cele specjalne (np. Triggery, Wyjścia) lub cele z innych lokalizacji
+        val macro = all.filter { it.semanticRole.contains("TRIGGER") || it.locationId != currentLocationId }
+
+        return Pair(micro, macro)
+    }
     fun setNavigationTarget(targetAnchorId: String) {
         currentEstimatedNode = null
-        userDestinationNode = topologyDatabase.getNodeById(targetAnchorId)
+        userDestinationNode = buildingTopologyDB.getNodeById(targetAnchorId)
         lastAnnouncedDistanceInt = -1
         reachAnnounced15 = false
         reachAnnounced10 = false
@@ -39,7 +54,7 @@ class NavigationRoutingEngine(
     }
 
     fun processNewTelemetryData(anchorId: String, distanceInMeters: Double) {
-        val detectedNode = topologyDatabase.getNodeById(anchorId) ?: return // Zabezpieczenie przed nieznanymi tagami
+        val detectedNode = buildingTopologyDB.getNodeById(anchorId) ?: return // Zabezpieczenie przed nieznanymi tagami
 
         // Obsługa dystansu do CELU (niezależnie od innych kotwic)
         if (userDestinationNode != null && anchorId == userDestinationNode!!.macAddress) {
@@ -135,24 +150,31 @@ class NavigationRoutingEngine(
 
     //musi przekazac jakos liste do BLE managera
     // zalozeniem ze pusta lista oznacza warunek FALSE
-    fun processScannedDevice(macAddress: String, rssi: Double):Boolean {
-        // 1. Sprawdzamy, czy przeskanowany MAC to nasz Boundary Trigger
-        val triggers = topologyDatabase.getBoundaryTriggers()
-        val matchedTrigger = triggers.find { it.macAddress == macAddress }
+    fun processScannedDevice(macAddress: String, rssi: Double): List<IoTDevice>? {
 
-        // 2. Jeśli to trigger i jesteśmy blisko (np. mocniej niż -60 dBm)
-        if (matchedTrigger != null && rssi > -60.00) {
-            println("🔥 WYKRYTO STREFĘ GRANICZNĄ: ${matchedTrigger.semanticRole}")
+        // 1. Szukamy, czy to urządzenie z Cache'u? ( w senie czy nie zlapalismy silnego sygnalu (przy cold start) z np kogos sluchawek BT
+        val knownDevice = buildingTopologyDB.cachedDevices.find { it.macAddress == macAddress } ?: return null
 
-            // 3. Logika zmiany piętra (np. jeśli trigger to winda na 2. piętrze,
-            // ładujemy nowe kotwice i tagi dla Location_ID = 2)
-            val newLocationId = matchedTrigger.locationId
-            val devicesForNewFloor = topologyDatabase.getDevicesForLocation(newLocationId)
+        // UWAGA: Sprawdzamy, czy urządzenie, które usłyszeliśmy, wymusza zmianę lokalizacji
+        // Dzieje się tak podczas ZIMNEGO STARTU (currentLocationId == null)
+        // LUB gdy złapaliśmy Trigger w windzie
+        if (currentLocationId != knownDevice.locationId) {
 
-            // 4. Mówimy listonoszowi, żeby wysłał nową listę do ESP!
-           // bleManager.sendDeviceListToEsp(devicesForNewFloor)
-            return true
+            // Ignorujemy "zwykłe" urządzenia z innych pięter, reagujemy tylko na Triggery
+            // (Chyba, że to ZIMNY START - wtedy bierzemy wszystko jak leci, żeby w ogóle zacząć)
+            val isColdStart = (currentLocationId == null)
+            val isTrigger = knownDevice.semanticRole.contains("TRIGGER")
+
+            if (isColdStart || isTrigger && rssi > -60.00) {
+                currentLocationId = knownDevice.locationId
+                println("🔥 ZMIANA LOKALIZACJI NA: $currentLocationId")
+
+                // Zwracamy listę nowych urządzeń dla tej lokalizacji do wysłania!
+                return buildingTopologyDB.getDevicesForLocation(currentLocationId!!)
+            }
         }
-        return false
+
+
+        return null
     }
 }
