@@ -146,13 +146,16 @@ class BleConnectionManager(
                     val dist = parts[1].trim().toDoubleOrNull()
 
                     if (dist != null) {
-                        //
-                        if(update_dev_list==routingEngine.processScannedDevice(id, dist)) {
+                        // 1. Dajemy odebrany skan do Mózgu.
+                        // Jeśli Mózg uzna, że to Zimny Start lub zmiana piętra, zwróci nową listę!
+                        val newDevicesToSend = routingEngine.processScannedDevice(id, dist)
 
-                            // SendFiltertoEsp() with list from processScannedDevice
-                            //or is it underhood operation ? but i should trigger it smhw afetr list updates
+                        // 2. Czy jest coś do wysłania?
+                        if (newDevicesToSend != null) {
+                            sendFilterToEsp(newDevicesToSend) // Wysyłamy!
                         }
-                            //wywolujemy glowny watek UI aby wyswietli dane
+
+                        // 3. Wywołujemy główny wątek UI, aby wyświetlić pozycję na ekranie
                             android.os.Handler(android.os.Looper.getMainLooper()).post {
                                 routingEngine.processNewTelemetryData(id, dist)
 
@@ -176,12 +179,19 @@ class BleConnectionManager(
         val service = gatt.getService(SERVICE_UUID) ?: return
         val filterChar = service.getCharacteristic(FILTER_CHAR_UUID) ?: return
 
-        // 1. Tworzymy lekki string z samymi adresami MAC oddzielonymi średnikami
-        val macListString = devices.joinToString(separator = ";") { it.macAddress }
+        // oczekiwany format listy:U:123;B:ff:ff:12:b1:64:d1,a8:03:2a:b8:ee:fa
+        // 2. Filtrujemy urządzenia UWB i łączymy ich adresy MAC przecinkiem
+        val uwbMacs = devices
+            .filter { it.deviceType == "UWB_ANCHOR" }
+            .joinToString(",") { it.macAddress }
 
-        // Dodajemy jakiś znak początku/końca np. "LIST:..." żeby ESP wiedziało, co odbiera
-        val payload = "U:$macListString"
-        // przed mac ble dodac "B:"
+        // 3. Filtrujemy urządzenia BLE i łączymy ich adresy MAC przecinkiem
+        val bleMacs = devices
+            .filter { it.deviceType == "BLE_BEACON" }
+            .joinToString(",") { it.macAddress }
+
+        // 4. Składamy wszystko w docelowy format
+        val payload = "U:$uwbMacs;B:$bleMacs"
 
         // 3. Wkładamy do rury i wysyłamy
         filterChar.value = payload.toByteArray(Charsets.UTF_8)
