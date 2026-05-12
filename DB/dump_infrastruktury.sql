@@ -5,7 +5,7 @@
 -- Dumped from database version 15.17
 -- Dumped by pg_dump version 17.0
 
--- Started on 2026-05-07 11:13:23
+-- Started on 2026-05-12 12:59:42
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -18,6 +18,30 @@ SET check_function_bodies = false;
 SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
+
+--
+-- TOC entry 221 (class 1255 OID 24763)
+-- Name: sync_target_location(); Type: FUNCTION; Schema: public; Owner: domi
+--
+
+CREATE FUNCTION public.sync_target_location() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    -- Sprawdzamy, czy cel ma przypisany sprzęt (czyli czy jest celem Mikro)
+    IF NEW.Associated_MAC IS NOT NULL THEN
+        -- Pobieramy prawdziwą lokalizację urządzenia i wpisujemy ją do naszego celu
+        SELECT Location_ID INTO NEW.Location_ID
+        FROM Dim_IoT_Devices
+        WHERE MAC_Address = NEW.Associated_MAC;
+    END IF;
+    
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.sync_target_location() OWNER TO domi;
 
 SET default_tablespace = '';
 
@@ -38,6 +62,48 @@ CREATE TABLE public.dim_iot_devices (
 
 
 ALTER TABLE public.dim_iot_devices OWNER TO domi;
+
+--
+-- TOC entry 220 (class 1259 OID 24746)
+-- Name: dim_navigation_targets; Type: TABLE; Schema: public; Owner: domi
+--
+
+CREATE TABLE public.dim_navigation_targets (
+    target_id integer NOT NULL,
+    location_id integer,
+    name character varying(100) NOT NULL,
+    category character varying(50),
+    associated_mac character varying(17),
+    is_macro_target boolean DEFAULT false
+);
+
+
+ALTER TABLE public.dim_navigation_targets OWNER TO domi;
+
+--
+-- TOC entry 219 (class 1259 OID 24745)
+-- Name: dim_navigation_targets_target_id_seq; Type: SEQUENCE; Schema: public; Owner: domi
+--
+
+CREATE SEQUENCE public.dim_navigation_targets_target_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.dim_navigation_targets_target_id_seq OWNER TO domi;
+
+--
+-- TOC entry 3448 (class 0 OID 0)
+-- Dependencies: 219
+-- Name: dim_navigation_targets_target_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: domi
+--
+
+ALTER SEQUENCE public.dim_navigation_targets_target_id_seq OWNED BY public.dim_navigation_targets.target_id;
+
 
 --
 -- TOC entry 215 (class 1259 OID 24702)
@@ -72,7 +138,7 @@ CREATE SEQUENCE public.dim_topology_location_id_seq
 ALTER SEQUENCE public.dim_topology_location_id_seq OWNER TO domi;
 
 --
--- TOC entry 3433 (class 0 OID 0)
+-- TOC entry 3449 (class 0 OID 0)
 -- Dependencies: 214
 -- Name: dim_topology_location_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: domi
 --
@@ -115,7 +181,7 @@ CREATE SEQUENCE public.fact_telemetry_telemetry_id_seq
 ALTER SEQUENCE public.fact_telemetry_telemetry_id_seq OWNER TO domi;
 
 --
--- TOC entry 3434 (class 0 OID 0)
+-- TOC entry 3450 (class 0 OID 0)
 -- Dependencies: 217
 -- Name: fact_telemetry_telemetry_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: domi
 --
@@ -124,7 +190,15 @@ ALTER SEQUENCE public.fact_telemetry_telemetry_id_seq OWNED BY public.fact_telem
 
 
 --
--- TOC entry 3269 (class 2604 OID 24705)
+-- TOC entry 3278 (class 2604 OID 24749)
+-- Name: dim_navigation_targets target_id; Type: DEFAULT; Schema: public; Owner: domi
+--
+
+ALTER TABLE ONLY public.dim_navigation_targets ALTER COLUMN target_id SET DEFAULT nextval('public.dim_navigation_targets_target_id_seq'::regclass);
+
+
+--
+-- TOC entry 3275 (class 2604 OID 24705)
 -- Name: dim_topology location_id; Type: DEFAULT; Schema: public; Owner: domi
 --
 
@@ -132,7 +206,7 @@ ALTER TABLE ONLY public.dim_topology ALTER COLUMN location_id SET DEFAULT nextva
 
 
 --
--- TOC entry 3270 (class 2604 OID 24722)
+-- TOC entry 3276 (class 2604 OID 24722)
 -- Name: fact_telemetry telemetry_id; Type: DEFAULT; Schema: public; Owner: domi
 --
 
@@ -140,7 +214,7 @@ ALTER TABLE ONLY public.fact_telemetry ALTER COLUMN telemetry_id SET DEFAULT nex
 
 
 --
--- TOC entry 3425 (class 0 OID 24708)
+-- TOC entry 3438 (class 0 OID 24708)
 -- Dependencies: 216
 -- Data for Name: dim_iot_devices; Type: TABLE DATA; Schema: public; Owner: domi
 --
@@ -155,19 +229,31 @@ a8:03:2a:b8:ee:fa	BLE_BEACON	2	Tag BLE - Window	-59
 
 
 --
--- TOC entry 3424 (class 0 OID 24702)
+-- TOC entry 3442 (class 0 OID 24746)
+-- Dependencies: 220
+-- Data for Name: dim_navigation_targets; Type: TABLE DATA; Schema: public; Owner: domi
+--
+
+COPY public.dim_navigation_targets (target_id, location_id, name, category, associated_mac, is_macro_target) FROM stdin;
+1	1	AEI - Wing: Left	WING	\N	t
+2	2	Tag BLE - Window	EQUIPMENT	a8:03:2a:b8:ee:fa	f
+\.
+
+
+--
+-- TOC entry 3437 (class 0 OID 24702)
 -- Dependencies: 215
 -- Data for Name: dim_topology; Type: TABLE DATA; Schema: public; Owner: domi
 --
 
 COPY public.dim_topology (location_id, building, wing, floor, room_name) FROM stdin;
-1	AEI	Lewe	1	Korytarz Główny
 2	My house	Main	1	Testing space
+1	AEI	Left	1	Korytarz Główny
 \.
 
 
 --
--- TOC entry 3427 (class 0 OID 24719)
+-- TOC entry 3440 (class 0 OID 24719)
 -- Dependencies: 218
 -- Data for Name: fact_telemetry; Type: TABLE DATA; Schema: public; Owner: domi
 --
@@ -1123,7 +1209,16 @@ COPY public.fact_telemetry (telemetry_id, "timestamp", scanner_id, mac_address, 
 
 
 --
--- TOC entry 3435 (class 0 OID 0)
+-- TOC entry 3451 (class 0 OID 0)
+-- Dependencies: 219
+-- Name: dim_navigation_targets_target_id_seq; Type: SEQUENCE SET; Schema: public; Owner: domi
+--
+
+SELECT pg_catalog.setval('public.dim_navigation_targets_target_id_seq', 2, true);
+
+
+--
+-- TOC entry 3452 (class 0 OID 0)
 -- Dependencies: 214
 -- Name: dim_topology_location_id_seq; Type: SEQUENCE SET; Schema: public; Owner: domi
 --
@@ -1132,7 +1227,7 @@ SELECT pg_catalog.setval('public.dim_topology_location_id_seq', 2, true);
 
 
 --
--- TOC entry 3436 (class 0 OID 0)
+-- TOC entry 3453 (class 0 OID 0)
 -- Dependencies: 217
 -- Name: fact_telemetry_telemetry_id_seq; Type: SEQUENCE SET; Schema: public; Owner: domi
 --
@@ -1141,7 +1236,7 @@ SELECT pg_catalog.setval('public.fact_telemetry_telemetry_id_seq', 946, true);
 
 
 --
--- TOC entry 3275 (class 2606 OID 24712)
+-- TOC entry 3283 (class 2606 OID 24712)
 -- Name: dim_iot_devices dim_iot_devices_pkey; Type: CONSTRAINT; Schema: public; Owner: domi
 --
 
@@ -1150,7 +1245,16 @@ ALTER TABLE ONLY public.dim_iot_devices
 
 
 --
--- TOC entry 3273 (class 2606 OID 24707)
+-- TOC entry 3288 (class 2606 OID 24752)
+-- Name: dim_navigation_targets dim_navigation_targets_pkey; Type: CONSTRAINT; Schema: public; Owner: domi
+--
+
+ALTER TABLE ONLY public.dim_navigation_targets
+    ADD CONSTRAINT dim_navigation_targets_pkey PRIMARY KEY (target_id);
+
+
+--
+-- TOC entry 3281 (class 2606 OID 24707)
 -- Name: dim_topology dim_topology_pkey; Type: CONSTRAINT; Schema: public; Owner: domi
 --
 
@@ -1159,7 +1263,7 @@ ALTER TABLE ONLY public.dim_topology
 
 
 --
--- TOC entry 3277 (class 2606 OID 24725)
+-- TOC entry 3285 (class 2606 OID 24725)
 -- Name: fact_telemetry fact_telemetry_pkey; Type: CONSTRAINT; Schema: public; Owner: domi
 --
 
@@ -1168,7 +1272,7 @@ ALTER TABLE ONLY public.fact_telemetry
 
 
 --
--- TOC entry 3278 (class 1259 OID 24731)
+-- TOC entry 3286 (class 1259 OID 24731)
 -- Name: idx_telemetry_time_mac; Type: INDEX; Schema: public; Owner: domi
 --
 
@@ -1176,7 +1280,15 @@ CREATE INDEX idx_telemetry_time_mac ON public.fact_telemetry USING btree ("times
 
 
 --
--- TOC entry 3279 (class 2606 OID 24713)
+-- TOC entry 3293 (class 2620 OID 24764)
+-- Name: dim_navigation_targets trg_sync_target_location; Type: TRIGGER; Schema: public; Owner: domi
+--
+
+CREATE TRIGGER trg_sync_target_location BEFORE INSERT OR UPDATE ON public.dim_navigation_targets FOR EACH ROW EXECUTE FUNCTION public.sync_target_location();
+
+
+--
+-- TOC entry 3289 (class 2606 OID 24713)
 -- Name: dim_iot_devices dim_iot_devices_location_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: domi
 --
 
@@ -1185,7 +1297,25 @@ ALTER TABLE ONLY public.dim_iot_devices
 
 
 --
--- TOC entry 3280 (class 2606 OID 24726)
+-- TOC entry 3291 (class 2606 OID 24758)
+-- Name: dim_navigation_targets dim_navigation_targets_associated_mac_fkey; Type: FK CONSTRAINT; Schema: public; Owner: domi
+--
+
+ALTER TABLE ONLY public.dim_navigation_targets
+    ADD CONSTRAINT dim_navigation_targets_associated_mac_fkey FOREIGN KEY (associated_mac) REFERENCES public.dim_iot_devices(mac_address);
+
+
+--
+-- TOC entry 3292 (class 2606 OID 24753)
+-- Name: dim_navigation_targets dim_navigation_targets_location_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: domi
+--
+
+ALTER TABLE ONLY public.dim_navigation_targets
+    ADD CONSTRAINT dim_navigation_targets_location_id_fkey FOREIGN KEY (location_id) REFERENCES public.dim_topology(location_id);
+
+
+--
+-- TOC entry 3290 (class 2606 OID 24726)
 -- Name: fact_telemetry fact_telemetry_mac_address_fkey; Type: FK CONSTRAINT; Schema: public; Owner: domi
 --
 
@@ -1193,7 +1323,7 @@ ALTER TABLE ONLY public.fact_telemetry
     ADD CONSTRAINT fact_telemetry_mac_address_fkey FOREIGN KEY (mac_address) REFERENCES public.dim_iot_devices(mac_address);
 
 
--- Completed on 2026-05-07 11:13:23
+-- Completed on 2026-05-12 12:59:42
 
 --
 -- PostgreSQL database dump complete
