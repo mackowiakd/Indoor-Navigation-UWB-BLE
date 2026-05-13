@@ -13,4 +13,7 @@ interface TopologyApiService {
     // PostgREST wymaga formatu zapytania w stylu ?location_id=eq.2
     @GET("dim_iot_devices")
     suspend fun getDevicesByLocation(@Query("location_id") locationQuery: String): List<IoTDevice>
+    // 🔴 NOWE ZAPYTANIE: Pobieranie celów nawigacyjnych
+    @GET("dim_navigation_targets")
+    suspend fun getNavigationTargets(): List<NavigationTarget>
 }
