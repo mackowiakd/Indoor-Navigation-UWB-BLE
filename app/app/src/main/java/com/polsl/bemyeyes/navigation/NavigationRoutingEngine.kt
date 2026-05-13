@@ -53,6 +53,9 @@ class NavigationRoutingEngine(
         }
     }
 
+    //do poprawki pod makro nawigacjie - bedzie wiele associated mac adress uznanych za cel ->
+    //wstarczy ze zlapie sygnal od ktorego koliwiek aby uznac za osiagniecie celu
+    //  userDestinationNode!!.macAddress musi byc wtedy lista tych urzadzen z MAKRO nawigacji (to samo co dostanie esp)
     fun processNewTelemetryData(anchorId: String, distanceInMeters: Double) {
         val detectedNode = buildingTopologyDB.getNodeById(anchorId) ?: return // Zabezpieczenie przed nieznanymi tagami
 
