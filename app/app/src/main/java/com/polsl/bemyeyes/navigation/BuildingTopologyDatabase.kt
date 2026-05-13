@@ -27,23 +27,20 @@ class BuildingTopologyDatabase {
 
     // 3. Niezmienna mapa inicjalizowana od razu (bez użycia 'put' i 'new')
     //@TODO powinna pobrac z aktualnej listy devices jakie to pietro i na tej podstawie wystawic opcje nawigacji
-    private val anchorRegistry: Map<String, AnchorNode> = mapOf(
+    var cachedDevices: List<IoTDevice> = emptyList()
+    var cachedTargets: List<NavigationTarget> = emptyList()
 
-        // Makronawigacja (Oryginalne węzły UWB/MQTT z Twojego kodu)
-        "A1" to AnchorNode("A1", WingIdentifier.WING_RIGHT, 4, NodeType.ROOM, "Sala 420"),
-        "UWB_001" to AnchorNode("UWB_001", WingIdentifier.WING_LEFT, 2, NodeType.ROOM, "Sala 214"),
-        "UWB_002" to AnchorNode("UWB_002", WingIdentifier.WING_LEFT, 2, NodeType.ROOM, "Sala 215"),
-        "UWB_003" to AnchorNode("UWB_003", WingIdentifier.WING_LEFT, 2, NodeType.STAIRCASE, "Klatka schodowa centralna"),
+    // Funkcje pomocnicze dla UI
+    fun getMacroTargets() = cachedTargets.filter { it.isMacroTarget }
 
-        // Mikronawigacja (Tagi BLE - dodane pod Twoją prezentację w jednym pokoju)
-        "TAG_DESK" to AnchorNode("TAG_DESK", WingIdentifier.WING_LEFT, 1, NodeType.ROOM, "Biurko prowadzącego"),
-        "TAG_COFFEE" to AnchorNode("TAG_COFFEE", WingIdentifier.WING_LEFT, 1, NodeType.ROOM, "Ekspres do kawy")
-    )
+    fun getMicroTargets(currentLocationId: Int?) =
+        cachedTargets.filter { !it.isMacroTarget && it.locationId == currentLocationId }
+
+    // Ta funkcja zastępuje Twoje stare 'getNodeById'
+    fun getDeviceByMac(mac: String) = cachedDevices.find { it.macAddress == mac }
 
     // Kotlin zwraca typ nullable (AnchorNode?), jeśli danego ID nie ma w bazie
-    fun getNodeById(id: String): AnchorNode? {
-        return anchorRegistry[id]
-    }
+
 
     // 4. Składnia Kotlina dla sprawdzania warunków (operator 'in')
     fun isConnectorAvailableOnFloor(floorLevel: Int): Boolean {
@@ -52,7 +49,7 @@ class BuildingTopologyDatabase {
     }
 
     // To jest nasz "Singleton w RAM". Zapiszemy tu całą bazę po starcie apki.
-    var cachedDevices: List<IoTDevice> = emptyList()
+
 
     // Szybka funkcja do wyciągania triggerów (żeby łatwo sprawdzać, czy jesteśmy przy schodach)
     fun getBoundaryTriggers(): List<IoTDevice> {
