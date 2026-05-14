@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
 import com.polsl.bemyeyes.navigation.*
+import com.polsl.bemyeyes.navigation.dataBase.NavigationTarget
 import com.polsl.bemyeyes.navigation.dataBase.RetrofitClient
 import com.polsl.bemyeyes.ui.theme.BeMyEyesTheme
 import kotlinx.coroutines.CoroutineScope
@@ -36,6 +37,8 @@ class MainActivity : ComponentActivity() {
 
     // Stan trzymający logi, obserwowany przez UI (Jetpack Compose)
     protected val debugLogs = mutableStateListOf<String>()
+    // Stan Compose, który pamięta gdzie jesteśmy (np. Location_ID = 2)
+    private val currentLocationIdState = mutableStateOf<Int?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,65 +58,67 @@ class MainActivity : ComponentActivity() {
         }
         // W MainActivity.kt
         lifecycleScope.launch {
-            try {
-                debugLogs.add(0, "📡 Pobieram całą topologię z bazy do Cache'u...")
-
-                // Zauważ, że pobieram getAllDevices(), a nie tylko jedno piętro!
-                // Trzymamy cały budynek w RAMie telefonu na wypadek utraty Wi-Fi.
-                val allDevices = RetrofitClient.apiService.getAllDevices()
-
-                topologyDatabase.cachedDevices = allDevices
-                debugLogs.add(0, "✅ Zapisano ${allDevices.size} urządzeń w pamięci podręcznej RAM.")
-
-            } catch (e: Exception) {
-                debugLogs.add(0, "❌ BŁĄD API: Nie udało się pobrać topologii.")
-            }
+            fetchDatabase()
         }
 
         setContent {
             BeMyEyesTheme {
                 val scope = rememberCoroutineScope()
+                // Odczytujemy stan lokalizacji. Gdy się zmieni, UI się przebuduje!
+                val currentLocation = currentLocationIdState.value
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     NavigationScreen(
 
                         modifier = Modifier.padding(innerPadding),
                         logs = debugLogs,
-                        onStartNavigation = { targetId ->
-                            routingEngine.setNavigationTarget(targetId)
-                            startBleServices()
+                        currentLocationId = currentLocation, // PRZEKAZUJEMY STAN
+                        topologyDb = topologyDatabase,
+
+                        onStartNavigation = { target ->
+                            if (target.associatedMac != null) {
+                                // TRYB MIKRO: Celujemy w konkretny przedmiot
+                                debugLogs.add(0, "🎯 Tryb Precyzyjny: Szukam ${target.name}")
+                                val singleDevice = listOfNotNull(topologyDatabase.getDeviceByMac(target.associatedMac))
+                                bleManager.sendFilterToEsp(singleDevice)
+                            } else {
+                                // TRYB MAKRO: Szukamy wejścia do strefy
+                                debugLogs.add(0, "📍 Tryb Eksploracji: Kieruj do ${target.name}")
+                                // Pobieramy wszystkie kotwice/tagi dla tej lokalizacji
+                                val areaDevices = topologyDatabase.getDevicesForLocation(target.locationId)
+                                bleManager.sendFilterToEsp(areaDevices)
+                            }
                         },
                         onDisconnect = { // <--- NOWA AKCJA
                         bleManager.disconnect()
                         debugLogs.add(0, "🛑 Wymuszono rozłączenie (Manual)")
                          },
-                        onTestApiClick = { // <--- TUTAJ ODBIERAMY KLIKNIĘCIE I ODPALAMY API
-                            scope.launch {
-                                try {
-                                    // Dodajemy na początek listy (indeks 0), żeby było na górze konsoli
-                                    debugLogs.add(0, "📡 Pobieram dane dla Location ID = 2...")
+                        onTestApiClick = {
+                            // Co robi przycisk Test API? Służy jako "Ręczne Odświeżenie"
+                            scope.launch { fetchDatabase() }
 
-                                    val devices =
-                                        RetrofitClient.apiService.getDevicesByLocation("eq.2")
-
-                                    if (devices.isEmpty()) {
-                                        debugLogs.add(0, "⚠️ Brak urządzeń w tej lokalizacji.")
-                                    } else {
-                                        devices.forEach { device ->
-                                            debugLogs.add(
-                                                0,
-                                                "✅ API Znalazło: ${device.semanticRole} (${device.macAddress})"
-                                            )
-                                        }
-                                    }
-                                } catch (e: Exception) {
-                                    debugLogs.add(0, "❌ BŁĄD API: ${e.message}")
-                                    e.printStackTrace()
-                                }
-                            }
+                            // DO TESTÓW: Możesz tu na sztywno zmienić lokalizację,
+                            // żeby zobaczyć jak pojawiają się przyciski mikro!
+                            // currentLocationIdState.value = 2
                         }
                     )
                 }
             }
+        }
+    }
+    // Wyciągnięte do osobnej funkcji, żeby kod był czystszy
+    private suspend fun fetchDatabase() {
+        try {
+            debugLogs.add(0, "📡 Pobieram mapę budynku...")
+            val allDevices = RetrofitClient.apiService.getAllDevices()
+            topologyDatabase.cachedDevices = allDevices
+
+            val allTargets = RetrofitClient.apiService.getNavigationTargets()
+            topologyDatabase.cachedTargets = allTargets
+
+            debugLogs.add(0, "✅ Cache gotowy: ${allDevices.size} dev, ${allTargets.size} celów.")
+        } catch (e: Exception) {
+            debugLogs.add(0, "❌ BŁĄD API: ${e.message}")
+            e.printStackTrace()
         }
     }
 
@@ -143,12 +148,17 @@ class MainActivity : ComponentActivity() {
 fun NavigationScreen(
     modifier: Modifier = Modifier,
     logs: List<String>,
-    onStartNavigation: (String) -> Unit,
+    onStartNavigation: (NavigationTarget) -> Unit, // zamiast string?? bo potrzebujemy tez mac adressu
     onDisconnect: () -> Unit,
-    onTestApiClick: () -> Unit // <--- NOWY PARAMETR (Callback)
-
+    onTestApiClick: () -> Unit, // <--- NOWY PARAMETR (Callback)
+    currentLocationId: Int?, // Musisz przekazać to z MainActivity/RoutingEngine
+    topologyDb: BuildingTopologyDatabase,
 
 ) {
+    // 1. TWORZYMY LISTY NA PODSTAWIE STANU LOKALIZACJI bo zapomnialam "wyciągnąć" te listy z bazy wewnątrz funkcji @Composable.
+    val macroTargets = topologyDb.getMacroTargets()
+    val microTargets = topologyDb.getMicroTargets(currentLocationId)
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -173,43 +183,6 @@ fun NavigationScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Button(
-            onClick = { onStartNavigation("A1") },
-            modifier = Modifier.fillMaxWidth().height(60.dp)
-        ) {
-            Text("Nawiguj do Sali 420 (Kotwica A1)")
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Button(
-            onClick = { onStartNavigation("UWB_001") },
-            modifier = Modifier.fillMaxWidth().height(60.dp)
-        ) {
-            Text("Nawiguj do Sali 214")
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Button(
-            onClick = { onStartNavigation("A1") },
-            modifier = Modifier.fillMaxWidth().height(60.dp)
-        ) {
-            Text("Nawiguj: Drzwi wyjściowe (UWB)")
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Button(
-            onClick = { onStartNavigation("TAG_DESK") },
-            modifier = Modifier.fillMaxWidth().height(60.dp)
-        ) {
-            Text("Nawiguj: Biurko (BLE)")
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Button(
-            onClick = { onStartNavigation("TAG_COFFEE") },
-            modifier = Modifier.fillMaxWidth().height(60.dp)
-        ) {
-            Text("Nawiguj: Ekspres do kawy (BLE)")
-        }
-        Spacer(modifier = Modifier.height(8.dp))
 
         Button(
             onClick = onTestApiClick, // <--- PRZYCISK TYLKO KRZYCZY "KLIKNIĘTO MNIE!"
@@ -220,6 +193,36 @@ fun NavigationScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+        Text("📍 MAKRONAWIGACJA (Stałe)", style = MaterialTheme.typography.titleMedium)
+        LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
+            items(macroTargets) { target ->
+                Button(
+                    onClick = { onStartNavigation(target) },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Blue)
+                ) {
+                    Text(target.name)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text("🎯 MIKRONAWIGACJA (W zasięgu)", style = MaterialTheme.typography.titleMedium)
+        if (microTargets.isEmpty()) {
+            Text("Brak precyzyjnych celów. Zbliż się do pokoju...", color = Color.Gray)
+        }
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            items(microTargets) { target ->
+                Button(
+                    onClick = { onStartNavigation(target) },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)
+                ) {
+                    Text(target.name)
+                }
+            }
+        }
 
 
         // KONSOLA DEBUG (odpowiednik nRF Connect)
