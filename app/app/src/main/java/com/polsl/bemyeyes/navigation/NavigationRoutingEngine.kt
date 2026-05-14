@@ -28,7 +28,7 @@ class NavigationRoutingEngine(
         private const val PASSING_THRESHOLD_METERS = 1.5
     }
 
-    // W NavigationRoutingEngine.kt
+    // PO CO nam to?
     fun getNavigationMenu(currentLocationId: Int?): Pair<List<IoTDevice>, List<IoTDevice>> {
         val all = buildingTopologyDB.cachedDevices
 
@@ -42,7 +42,7 @@ class NavigationRoutingEngine(
     }
     fun setNavigationTarget(targetAnchorId: String) {
         currentEstimatedNode = null
-        userDestinationNode = buildingTopologyDB.getNodeById(targetAnchorId)
+        userDestinationNode = null // assigned in processNewTelemetryData (we dont now if macro or micro target)
         lastAnnouncedDistanceInt = -1
         reachAnnounced15 = false
         reachAnnounced10 = false
@@ -57,8 +57,30 @@ class NavigationRoutingEngine(
     //wstarczy ze zlapie sygnal od ktorego koliwiek aby uznac za osiagniecie celu
     //  userDestinationNode!!.macAddress musi byc wtedy lista tych urzadzen z MAKRO nawigacji (to samo co dostanie esp)
     fun processNewTelemetryData(anchorId: String, distanceInMeters: Double) {
-        val detectedNode = buildingTopologyDB.getNodeById(anchorId) ?: return // Zabezpieczenie przed nieznanymi tagami
+        var isMacroTarget : Boolean = false;
 
+       //@TODO chyba logika ustawiania celu micro/makro nie powinna sie odbywac w fukcji przetwrazajacej dane na naiwgacje
+
+
+        for (target in buildingTopologyDB.getMacroTargets()){
+            if (target.associatedMac == anchorId){
+                setNavigationTarget(target.targetId.toString())
+                isMacroTarget = true;
+            }
+        }
+
+       if(!isMacroTarget) {
+           if(buildingTopologyDB.getDeviceByMac(anchorId) != null) {
+               for(target in buildingTopologyDB.getMicroTargets(currentLocationId = currentLocationId)){
+                   if(target.targetId.toString() == anchorId){
+                       setNavigationTarget(target.targetId.toString())
+                   }
+               }
+
+           }
+
+        }
+        // @TODO  czyli my musimy wsadzic cala obie listy do Anchors aby miec logike mijania itd??
         // Obsługa dystansu do CELU (niezależnie od innych kotwic)
         if (userDestinationNode != null && anchorId == userDestinationNode!!.macAddress) {
             announceDistanceProgress(distanceInMeters)
@@ -166,7 +188,8 @@ class NavigationRoutingEngine(
             // Ignorujemy "zwykłe" urządzenia z innych pięter, reagujemy tylko na Triggery
             // (Chyba, że to ZIMNY START - wtedy bierzemy wszystko jak leci, żeby w ogóle zacząć)
             val isColdStart = (currentLocationId == null)
-            val isTrigger = knownDevice.semanticRole.contains("TRIGGER")
+            val isTrigger = buildingTopologyDB.getBoundaryTriggers().any { it.macAddress == macAddress }
+
 
             if (isColdStart || isTrigger && rssi > -60.00) {
                 currentLocationId = knownDevice.locationId
