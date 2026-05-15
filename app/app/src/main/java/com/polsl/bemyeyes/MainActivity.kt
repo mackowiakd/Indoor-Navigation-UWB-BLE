@@ -88,6 +88,10 @@ class MainActivity : ComponentActivity() {
                                 bleManager.sendFilterToEsp(areaDevices)
                             }
                         },
+                        onConnect = { // <--- TUTAJ PODPINAMY BLE!
+                            startBleServices()
+                            debugLogs.add(0, "🔄 Inicjalizacja połączenia z ESP32...")
+                        },
                         onDisconnect = { // <--- NOWA AKCJA
                         bleManager.disconnect()
                         debugLogs.add(0, "🛑 Wymuszono rozłączenie (Manual)")
@@ -95,6 +99,7 @@ class MainActivity : ComponentActivity() {
                         onTestApiClick = {
                             // Co robi przycisk Test API? Służy jako "Ręczne Odświeżenie"
                             scope.launch { fetchDatabase() }
+
 
                             // DO TESTÓW: Możesz tu na sztywno zmienić lokalizację,
                             // żeby zobaczyć jak pojawiają się przyciski mikro!
@@ -149,6 +154,7 @@ fun NavigationScreen(
     modifier: Modifier = Modifier,
     logs: List<String>,
     onStartNavigation: (NavigationTarget) -> Unit, // zamiast string?? bo potrzebujemy tez mac adressu
+    onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onTestApiClick: () -> Unit, // <--- NOWY PARAMETR (Callback)
     currentLocationId: Int?, // Musisz przekazać to z MainActivity/RoutingEngine
@@ -160,26 +166,33 @@ fun NavigationScreen(
     val microTargets = topologyDb.getMicroTargets(currentLocationId)
 
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp),
+        modifier = modifier.fillMaxSize().padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Tytuł i przycisk w jednym rzędzie
+        // --- GÓRNY PASEK STEROWANIA BLE ---
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(text = "Asystent UWB/BLE", style = MaterialTheme.typography.titleLarge)
-            Button(
-                onClick = onDisconnect,
-                colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
-            ) {
-                Text("Rozłącz")
+            Text(text = "Asystent UWB", style = MaterialTheme.typography.titleLarge)
+
+            // Pudełko na dwa przyciski (Połącz / Rozłącz)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onConnect,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)) // Zielony
+                ) {
+                    Text("Połącz")
+                }
+                Button(
+                    onClick = onDisconnect,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                ) {
+                    Text("Rozłącz")
+                }
             }
         }
-
 
         Spacer(modifier = Modifier.height(16.dp))
 
