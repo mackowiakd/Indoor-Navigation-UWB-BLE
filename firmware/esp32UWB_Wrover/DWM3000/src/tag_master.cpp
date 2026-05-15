@@ -47,7 +47,10 @@ class MyWriteCallbacks: public NimBLECharacteristicCallbacks {
         if(rxValue.length() > 0) {
             //mock ble list hardcoded for tests
           // Automatycznie doklejamy "U:" na początek i ";B:MAC1,MAC2" na koniec
-            String payload = "U:" + String(rxValue.c_str()) + ";B:" + String(MOCK_TAG_1_MAC.c_str()) + "," + String(MOCK_TAG_2_MAC.c_str());
+          //UWAGA TO WTTW GDY TESTUJEMY Z nRF CONNECT 
+           // String payload = "U:" + String(rxValue.c_str()) + ";B:" + String(MOCK_TAG_1_MAC.c_str()) + "," + String(MOCK_TAG_2_MAC.c_str());
+           //APKA sama sklada odpowiedni format, więc tu wystarczy przekazać to co przyszło
+            String payload = String(rxValue.c_str());
             appData.parseBlePayload(payload);
            
             newFilterReceived = true;
