@@ -43,13 +43,6 @@ class BleConnectionManager(
         var update_dev_list: Boolean=false;
 
 
-
-        // Twoja lista testowa (Mock) - to może docelowo przychodzić z bazy
-        val MOCK_MAC_LIST = listOf(
-            "b0:c7:de:26:8c:66", // Biurko
-            "a8:03:2a:b8:ee:fa", // Shelly/Ekspres
-            "c4:d5:e6:f7:08:09"  // Dodatkowy tag testowy
-        )
     }
     private fun postLog(message: String) {
         Log.i(TAG, message)
