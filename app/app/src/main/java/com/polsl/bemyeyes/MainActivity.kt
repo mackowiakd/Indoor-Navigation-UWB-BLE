@@ -40,6 +40,8 @@ class MainActivity : ComponentActivity() {
     // Stan Compose, który pamięta gdzie jesteśmy (np. Location_ID = 2)
     private val currentLocationIdState = mutableStateOf<Int?>(null)
 
+    private val currentEspFilterState = mutableStateOf("Brak (Oczekuję na skan / Cold Start...)") //  Pamięta ostatnio wysłany filtr
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -52,6 +54,10 @@ class MainActivity : ComponentActivity() {
         bleManager = BleConnectionManager(routingEngine) { nowaWiadomosc ->
             // Upewniamy się, że modyfikujemy interfejs w głównym wątku
             runOnUiThread {
+                // WYCHWYTYWANIE FILTRU: Jeśli log zawiera te słowa, wyciągamy samą listę (payload)
+                if (nowaWiadomosc.contains("Wysłano listę")) {
+                    currentEspFilterState.value = nowaWiadomosc.substringAfter("ESP32: ").trim()
+                }
                 debugLogs.add(0, nowaWiadomosc) // Najnowsze na samej górze
                 if (debugLogs.size > 50) debugLogs.removeAt(debugLogs.size - 1) // Pamiętamy tylko 50 ostatnich
             }
@@ -66,6 +72,7 @@ class MainActivity : ComponentActivity() {
                 val scope = rememberCoroutineScope()
                 // Odczytujemy stan lokalizacji. Gdy się zmieni, UI się przebuduje!
                 val currentLocation = currentLocationIdState.value
+                val currentFilter = currentEspFilterState.value // <--- Odczytujemy stan
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     NavigationScreen(
 
@@ -73,6 +80,7 @@ class MainActivity : ComponentActivity() {
                         logs = debugLogs,
                         currentLocationId = currentLocation, // PRZEKAZUJEMY STAN
                         topologyDb = topologyDatabase,
+                        currentEspFilter = currentFilter, // <--- PRZEKAZUJEMY STAN
 
                         onStartNavigation = { target ->
                             if (target.associatedMac != null) {
@@ -159,6 +167,7 @@ fun NavigationScreen(
     onTestApiClick: () -> Unit, // <--- NOWY PARAMETR (Callback)
     currentLocationId: Int?, // Musisz przekazać to z MainActivity/RoutingEngine
     topologyDb: BuildingTopologyDatabase,
+    currentEspFilter: String, // <--- dane wysylane APP->ESP
 
 ) {
     // 1. TWORZYMY LISTY NA PODSTAWIE STANU LOKALIZACJI bo zapomnialam "wyciągnąć" te listy z bazy wewnątrz funkcji @Composable.
@@ -236,6 +245,29 @@ fun NavigationScreen(
                 }
             }
         }
+        // 🔥 NOWOŚĆ: DEDYKOWANY PANEL STANU ESP32 🔥
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)) // Ciemnoszary
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = "📡 Aktualny filtr załadowany do ESP32:",
+                    color = Color.Yellow,
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                // Tutaj wyświetli się np. U:0x001;B:ff:ff:12...
+                Text(
+                    text = currentEspFilter,
+                    color = Color.White,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 14.sp
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
 
         // KONSOLA DEBUG (odpowiednik nRF Connect)
