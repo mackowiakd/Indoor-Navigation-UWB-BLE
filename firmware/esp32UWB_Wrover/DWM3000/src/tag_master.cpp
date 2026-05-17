@@ -65,18 +65,43 @@ class MyAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
         std::string deviceMac = advertisedDevice->getAddress().toString();
         int currentRssi = advertisedDevice->getRSSI();
 
-        //tu iteracja po docelowej liscie tagow BLE
-        appData.updateBleDistance(deviceMac, calculateDistance(currentRssi), EMA_ALPHA);
+       // ---------------------------------------------------------
+        // TRYB 1: NAWIGACJA (Mamy już listę od aplikacji z telefonu)
+        // ---------------------------------------------------------
+        if (appData.hasBleTargets()) { 
+            // hasBleTargets() to funkcja którą musisz dodać, zwraca true jeśli vector nie jest pusty
+            
+            if (appData.isTargetBleDevice(deviceMac)) {
+                // To jest nasz cel! Aktualizujemy dystans.
+                appData.updateBleDistance(deviceMac, calculateDistance(currentRssi), EMA_ALPHA);
+            }
+            return; // Kończymy, nie interesują nas inne urządzenia!
+        }
 
-        // //old ble (hardcoded)
-        // if (deviceMac == MOCK_TAG_1_MAC || deviceMac == MOCK_TAG_2_MAC) {
-        //     float newDist = calculateDistance(currentRssi);
-        //     if (deviceMac == MOCK_TAG_1_MAC) {
-        //         distTag1 = (distTag1 < 0) ? newDist : (EMA_ALPHA * newDist) + ((1.0 - EMA_ALPHA) * distTag1);
-        //     } else if (deviceMac == MOCK_TAG_2_MAC) {
-        //         distTag2 = (distTag2 < 0) ? newDist : (EMA_ALPHA * newDist) + ((1.0 - EMA_ALPHA) * distTag2);
-        //     }
-        // }
+        // ---------------------------------------------------------
+        // TRYB 2: COLD START (Lista jest pusta, szukamy gdzie jesteśmy)
+        // ---------------------------------------------------------
+        if (currentRssi > -80) {
+            
+            // WERYFIKACJA 1: Po nazwie (odkomentuj jeśli Twoje tagi mają nazwę)
+            /*
+            std::string deviceName = advertisedDevice->getName();
+            if (deviceName.find("TwojaNazwaTaga") == std::string::npos) {
+                return; // To nie nasz tag (np. słuchawki), ignoruj
+            }
+            */
+
+            // WERYFIKACJA 2: Po przedrostku MAC (OUI) - ZALECANE!
+            // Zmień "ff:ff:12" na pierwsze znaki adresów MAC Twoich prawdziwych tagów
+            if (deviceMac.substr(0, 8) == "ff:ff:12" || deviceMac.substr(0, 8) == "aa:bb:cc") {
+                
+                Serial.printf("🎯 [COLD START] Znaleziono infrastrukturę! MAC: %s | RSSI: %d \n", 
+                              deviceMac.c_str(), currentRssi);
+                              
+                // Dodajemy go do listy. W następnej pętli ESP wyśle ten MAC do telefonu.
+                appData.addBleTarget(deviceMac); 
+            }
+        }
     }
 };
 

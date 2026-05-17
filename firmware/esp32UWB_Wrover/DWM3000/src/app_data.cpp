@@ -93,6 +93,7 @@ void AppDataManager::updateBleDistance(const std::string& mac, float newDist, fl
             }
             return;
         }
+       
     }
 }
 
@@ -128,4 +129,11 @@ void AppDataManager::printCurrentState() {
         Serial.printf("%s ", device.mac.c_str());
     }
     Serial.println("\n");
+
+   
+}
+ void AppDataManager::addBleTarget(const std::string& mac) {
+        if (!isTargetBleDevice(mac)) {
+            target_ble_devices.push_back({mac, -1.0f});
+        }
 }

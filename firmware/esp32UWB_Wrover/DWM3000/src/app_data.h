@@ -35,6 +35,10 @@ public:
 
     // Narzędzia
     void printCurrentState();
+    void addBleTarget(const std::string& mac);
+    bool hasBleTargets() {
+        return !target_ble_devices.empty();
+    }
 };
 
 // Globalna instancja dostępna wszędzie po zaincludowaniu nagłówka
