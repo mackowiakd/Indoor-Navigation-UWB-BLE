@@ -81,31 +81,46 @@ class MyAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
         // ---------------------------------------------------------
         // TRYB 2: COLD START (Lista jest pusta, szukamy gdzie jesteśmy)
         // ---------------------------------------------------------
-        if (currentRssi > -80) {
+        if (currentRssi > -60) {
             
-            // WERYFIKACJA 1: Po nazwie (odkomentuj jeśli Twoje tagi mają nazwę)
-            
+            bool isOurTag = false; // Flaga, która określi, czy wpuszczamy to urządzenie
+
+        // =================================================================
+        // KROK 1: WERYFIKACJA PO NAZWIE (Whitelisting słów kluczowych)
+        // =================================================================
+        if (advertisedDevice->haveName()) {
             std::string deviceName = advertisedDevice->getName();
-            if (deviceName.find("Beacon") != std::string::npos) {
-                appData.addBleTarget(deviceMac);
-                return; // To nie nasz tag (np. słuchawki), ignoruj
-            }
-            // Szukamy sekcji "Manufacturer Data" w pakiecie Bluetooth
-            if (advertisedDevice->haveManufacturerData()) {
-                std::string data = advertisedDevice->getManufacturerData();
+            
+            // Funkcja 'find' szuka podciągu. Dzięki temu złapie "iTAG", "iTAG_1", "my_iTAG" itp.
+            if (deviceName.find("iTAG") != std::string::npos || 
+                deviceName.find("BLE") != std::string::npos ||
+                deviceName.find("Beacon") != std::string::npos) {
                 
-                // Format iBeacon zawsze zaczyna się od specyficznego ciągu bajtów
-                // (Apple ID: 0x4C 0x00, a potem znacznik iBeacon 0x02 0x15)
-                if (data.length() >= 25 && data[0] == 0x4C && data[1] == 0x00 && data[2] == 0x02 && data[3] == 0x15) {
-                    
-                    Serial.printf("🎯 ZNALEZIONO CZYSTEGO iBEACONA! MAC: %s\n", deviceMac.c_str());
-                    appData.addBleTarget(deviceMac);
-                    return;
-                }
-                
-                // Inny popularny format to Eddystone (Google), który z kolei
-                // wysyła specyficzne Service Data z UUID 0xFEAA.
+                Serial.printf("🎯 [WHITELIST] Znaleziono po nazwie: '%s' | MAC: %s\n", deviceName.c_str(), deviceMac.c_str());
+                isOurTag = true;
             }
+        }
+
+        // =================================================================
+        // KROK 2: WERYFIKACJA PO PAYLOADZIE (Jeśli nazwa nie pasowała/brak nazwy)
+        // =================================================================
+        if (!isOurTag && advertisedDevice->haveManufacturerData()) {
+            std::string data = advertisedDevice->getManufacturerData();
+            
+            // Format Apple iBeacon
+            if (data.length() >= 25 && data[0] == 0x4C && data[1] == 0x00 && data[2] == 0x02 && data[3] == 0x15) {
+                Serial.printf("🎯 [WHITELIST] Znaleziono po iBeacon Payload! MAC: %s\n", deviceMac.c_str());
+                isOurTag = true;
+            }
+        }
+
+        // =================================================================
+        // KROK 3: DECYZJA (Zatwierdzenie celu)
+        // =================================================================
+        if (isOurTag) {
+            appData.addBleTarget(deviceMac);
+            // Gdy tylko złapiemy pierwszy tag, telefon odpyta bazę i wyśle pełną listę
+        }
         }
             
 
