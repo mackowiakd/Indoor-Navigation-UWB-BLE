@@ -99,15 +99,15 @@ void AppDataManager::updateBleDistance(const std::string& mac, float newDist, fl
 
 String AppDataManager::getAggregatedData(float current_uwb_distance) {
     // Format docelowy: UWB:2.45;BLE_b164d1:1.50;BLE_b8eefa:3.20
+    //kotwice chyba nie potrzebuja dawac ID bo nie sa trigerrami ,jeydnie dane uzteczne
     String payload = "UWB:" + String(current_uwb_distance, 2);
     
     for (const auto& device : target_ble_devices) {
         if (device.distance > 0) {
-            // Dla oszczędności bajtów ucinamy początek MACa i wysyłamy np. "BLE_b8eefa:3.20"
-            String shortMac = String(device.mac.c_str()).substring(9); 
-            shortMac.replace(":", "");
-            payload += ";BLE_" + shortMac + ":" + String(device.distance, 2);
-        }
+        // Wysyłamy PEŁNY MAC. Używamy znaku '=' żeby oddzielić MAC od dystansu!
+        // Format docelowy: UWB:2.45;BLE_ff:ff:12:b1:64:d1=1.50
+        payload += ";BLE_" + String(device.mac.c_str()) + "=" + String(device.distance, 2);
+    }
     }
     return payload;
 }
