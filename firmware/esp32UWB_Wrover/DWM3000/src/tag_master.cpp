@@ -84,24 +84,32 @@ class MyAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
         if (currentRssi > -80) {
             
             // WERYFIKACJA 1: Po nazwie (odkomentuj jeśli Twoje tagi mają nazwę)
-            /*
+            
             std::string deviceName = advertisedDevice->getName();
-            if (deviceName.find("TwojaNazwaTaga") == std::string::npos) {
+            if (deviceName.find("Beacon") != std::string::npos) {
+                appData.addBleTarget(deviceMac);
                 return; // To nie nasz tag (np. słuchawki), ignoruj
             }
-            */
-
-            // WERYFIKACJA 2: Po przedrostku MAC (OUI) - ZALECANE!
-            // Zmień "ff:ff:12" na pierwsze znaki adresów MAC Twoich prawdziwych tagów
-            if (deviceMac.substr(0, 8) == "ff:ff:12" || deviceMac.substr(0, 8) == "aa:bb:cc") {
+            // Szukamy sekcji "Manufacturer Data" w pakiecie Bluetooth
+            if (advertisedDevice->haveManufacturerData()) {
+                std::string data = advertisedDevice->getManufacturerData();
                 
-                Serial.printf("🎯 [COLD START] Znaleziono infrastrukturę! MAC: %s | RSSI: %d \n", 
-                              deviceMac.c_str(), currentRssi);
-                              
-                // Dodajemy go do listy. W następnej pętli ESP wyśle ten MAC do telefonu.
-                appData.addBleTarget(deviceMac); 
+                // Format iBeacon zawsze zaczyna się od specyficznego ciągu bajtów
+                // (Apple ID: 0x4C 0x00, a potem znacznik iBeacon 0x02 0x15)
+                if (data.length() >= 25 && data[0] == 0x4C && data[1] == 0x00 && data[2] == 0x02 && data[3] == 0x15) {
+                    
+                    Serial.printf("🎯 ZNALEZIONO CZYSTEGO iBEACONA! MAC: %s\n", deviceMac.c_str());
+                    appData.addBleTarget(deviceMac);
+                    return;
+                }
+                
+                // Inny popularny format to Eddystone (Google), który z kolei
+                // wysyła specyficzne Service Data z UUID 0xFEAA.
             }
         }
+            
+
+            
     }
 };
 
