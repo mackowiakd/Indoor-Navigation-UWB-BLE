@@ -78,7 +78,9 @@ class NavigationRoutingEngine(
         return null
     }
 
-    // A ta funkcja zajmuje się TYLKO MÓWIENIEM i orientacją przestrzenną
+    // =========================================================================
+    // AKCJE Z BLUETOOTHA (Logika mijania i dotarcia)
+    // =========================================================================
     fun processNewTelemetryData(macAddress: String, distanceOrRssi: Double) {
 
         // 1. Zidentyfikuj, co usłyszało ESP32
