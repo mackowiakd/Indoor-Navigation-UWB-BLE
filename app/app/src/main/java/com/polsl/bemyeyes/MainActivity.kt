@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
+import androidx.compose.material3.value
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +42,7 @@ class MainActivity : ComponentActivity() {
     private val currentLocationIdState = mutableStateOf<Int?>(null)
 
     private val currentEspFilterState = mutableStateOf("Brak (Oczekuję na skan / Cold Start...)") //  Pamięta ostatnio wysłany filtr
+    private val currentTargetNameState = mutableStateOf("Brak celu (Wybierz coś z listy)")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -73,6 +75,8 @@ class MainActivity : ComponentActivity() {
                 // Odczytujemy stan lokalizacji. Gdy się zmieni, UI się przebuduje!
                 val currentLocation = currentLocationIdState.value
                 val currentFilter = currentEspFilterState.value // <--- Odczytujemy stan
+                // Pamięta nazwę celu, do którego aktualnie idziemy
+
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     NavigationScreen(
 
@@ -81,9 +85,15 @@ class MainActivity : ComponentActivity() {
                         currentLocationId = currentLocation, // PRZEKAZUJEMY STAN
                         topologyDb = topologyDatabase,
                         currentEspFilter = currentFilter, // <--- PRZEKAZUJEMY STAN
+                        currentTargetName = currentTargetNameState.value,
+
 
                         onStartNavigation = { target ->
+
                             if (target.associatedMac != null) {
+                                // 1. KLUCZOWE UZUPEŁNIENIE: Budzimy silnik nawigacji i przekazujemy cel!
+                                routingEngine.setNavigationTarget(target)
+                                currentTargetNameState.value = target.name
                                 // TRYB MIKRO: Celujemy w konkretny przedmiot
                                 debugLogs.add(0, "🎯 Tryb Precyzyjny: Szukam ${target.name}")
                                 val singleDevice = listOfNotNull(topologyDatabase.getDeviceByMac(target.associatedMac))
@@ -107,11 +117,19 @@ class MainActivity : ComponentActivity() {
                         onTestApiClick = {
                             // Co robi przycisk Test API? Służy jako "Ręczne Odświeżenie"
                             scope.launch { fetchDatabase() }
+                            //loging/printing current location list mikro & makro
+                            // --- LOGOWANIE ZAWARTOŚCI BAZY ---
+                            val devices = topologyDatabase.cachedDevices
+                            val macro = topologyDatabase.getMacroTargets()
+                            val micro = topologyDatabase.getMicroTargets(currentLocationIdState.value)
+
+                            debugLogs.add(0, "📊 --- STATUS BAZY DANYCH ---")
+                            debugLogs.add(0, "📱 Urządzenia (${devices.size}): " + devices.joinToString(", ") { it.macAddress })
+                            debugLogs.add(0, "📍 Cele Makro (${macro.size}): " + macro.joinToString(", ") { it.name })
+                            debugLogs.add(0, "🎯 Cele Mikro dla Loc=${currentLocationIdState.value} (${micro.size})")
+                            debugLogs.add(0, "📊 ---------------------------")
 
 
-                            // DO TESTÓW: Możesz tu na sztywno zmienić lokalizację,
-                            // żeby zobaczyć jak pojawiają się przyciski mikro!
-                            // currentLocationIdState.value = 2
                         }
                     )
                 }
@@ -168,6 +186,7 @@ fun NavigationScreen(
     currentLocationId: Int?, // Musisz przekazać to z MainActivity/RoutingEngine
     topologyDb: BuildingTopologyDatabase,
     currentEspFilter: String, // <--- dane wysylane APP->ESP
+    currentTargetName: String,
 
 ) {
     // 1. TWORZYMY LISTY NA PODSTAWIE STANU LOKALIZACJI bo zapomnialam "wyciągnąć" te listy z bazy wewnątrz funkcji @Composable.
@@ -202,8 +221,28 @@ fun NavigationScreen(
                 }
             }
         }
+        Spacer(modifier = Modifier.height(12.dp))
 
-        Spacer(modifier = Modifier.height(16.dp))
+        // ==========================================================
+        // 3. PANEL: AKTYWNY CEL NAWIGACJI
+        // ==========================================================
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0D47A1)) // Ciemnoniebieski
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("🏁 ", fontSize = 24.sp)
+                Column {
+                    Text("Aktywny cel podróży:", color = Color.LightGray, style = MaterialTheme.typography.labelMedium)
+                    Text(currentTargetName, color = Color.White, style = MaterialTheme.typography.titleMedium)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
 
 
         Button(
@@ -211,13 +250,16 @@ fun NavigationScreen(
             modifier = Modifier.fillMaxWidth().height(60.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color.Magenta)
         ) {
-            Text("Testuj API (Location 2)")
+            Text("Testuj API ")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+        // ==========================================================
+        // 5. LISTA MAKRO (Przekazanie zmiennej 'macroTargets' do UI)
+        // ==========================================================
         Text("📍 MAKRONAWIGACJA (Stałe)", style = MaterialTheme.typography.titleMedium)
         LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
-            items(macroTargets) { target ->
+            items(macroTargets) { target -> // <--- TUTAJ UŻYWAMY LISTY MAKRO
                 Button(
                     onClick = { onStartNavigation(target) },
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -228,14 +270,17 @@ fun NavigationScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
+        // ==========================================================
+        // 6. LISTA MIKRO (Przekazanie zmiennej 'microTargets' do UI)
+        // ==========================================================
         Text("🎯 MIKRONAWIGACJA (W zasięgu)", style = MaterialTheme.typography.titleMedium)
         if (microTargets.isEmpty()) {
             Text("Brak precyzyjnych celów. Zbliż się do pokoju...", color = Color.Gray)
         }
         LazyColumn(modifier = Modifier.weight(1f)) {
-            items(microTargets) { target ->
+            items(microTargets) { target -> // <--- TUTAJ UŻYWAMY LISTY MIKRO
                 Button(
                     onClick = { onStartNavigation(target) },
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -245,6 +290,10 @@ fun NavigationScreen(
                 }
             }
         }
+        Spacer(modifier = Modifier.height(10.dp))
+
+
+        //moze jakis input jako 'set target' gdzie uztkownik po przejrzeniu makro/mikro listy moze wpisac mac/id celu
         // 🔥 NOWOŚĆ: DEDYKOWANY PANEL STANU ESP32 🔥
         Card(
             modifier = Modifier.fillMaxWidth(),
