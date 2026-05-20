@@ -13,7 +13,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
-import androidx.compose.material3.value
+
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,6 +29,8 @@ import com.polsl.bemyeyes.ui.theme.BeMyEyesTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
+
+
 class MainActivity : ComponentActivity() {
 
     private lateinit var topologyDatabase: BuildingTopologyDatabase
@@ -41,7 +43,8 @@ class MainActivity : ComponentActivity() {
     // Stan Compose, który pamięta gdzie jesteśmy (np. Location_ID = 2)
     private val currentLocationIdState = mutableStateOf<Int?>(null)
 
-    private val currentEspFilterState = mutableStateOf("Brak (Oczekuję na skan / Cold Start...)") //  Pamięta ostatnio wysłany filtr
+    // --- KONSOLA 2: Wysyłka z Apki (APP -> ESP) ---
+    private val appToEspLogs = mutableStateListOf<String>() //  Pamięta ostatnio wysłany filtr
     private val currentTargetNameState = mutableStateOf("Brak celu (Wybierz coś z listy)")
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,11 +60,14 @@ class MainActivity : ComponentActivity() {
             // Upewniamy się, że modyfikujemy interfejs w głównym wątku
             runOnUiThread {
                 // WYCHWYTYWANIE FILTRU: Jeśli log zawiera te słowa, wyciągamy samą listę (payload)
-                if (nowaWiadomosc.contains("Wysłano listę")) {
-                    currentEspFilterState.value = nowaWiadomosc.substringAfter("ESP32: ").trim()
-                }
+                if (nowaWiadomosc.contains("Wysłano")) {
+                    appToEspLogs.add(0, nowaWiadomosc)
+                    if (appToEspLogs.size > 20) appToEspLogs.removeAt(appToEspLogs.size - 1)
+                } else {
+                    // W przeciwnym razie - to odczyt z ESP32, idzie do głównej konsoli
                 debugLogs.add(0, nowaWiadomosc) // Najnowsze na samej górze
                 if (debugLogs.size > 50) debugLogs.removeAt(debugLogs.size - 1) // Pamiętamy tylko 50 ostatnich
+                }
             }
         }
         // W MainActivity.kt
@@ -74,8 +80,11 @@ class MainActivity : ComponentActivity() {
                 val scope = rememberCoroutineScope()
                 // Odczytujemy stan lokalizacji. Gdy się zmieni, UI się przebuduje!
                 val currentLocation = currentLocationIdState.value
-                val currentFilter = currentEspFilterState.value // <--- Odczytujemy stan
+                val appLogs = appToEspLogs.first()// <--- Odczytujemy stan
                 // Pamięta nazwę celu, do którego aktualnie idziemy
+                // MAGIA COMPOSE: Teraz kiedy dbVer się zmieni, Kotlin obliczy listy na nowo!
+                val macroList = remember(dbVer) { topologyDatabase.getMacroTargets() }
+                val microList = remember(currentLocation, dbVer) { topologyDatabase.getMicroTargets(currentLocation) }
 
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     NavigationScreen(
@@ -84,7 +93,7 @@ class MainActivity : ComponentActivity() {
                         logs = debugLogs,
                         currentLocationId = currentLocation, // PRZEKAZUJEMY STAN
                         topologyDb = topologyDatabase,
-                        currentEspFilter = currentFilter, // <--- PRZEKAZUJEMY STAN
+                        appLogs = appToEspLogs,
                         currentTargetName = currentTargetNameState.value,
 
 
@@ -123,11 +132,12 @@ class MainActivity : ComponentActivity() {
                             val macro = topologyDatabase.getMacroTargets()
                             val micro = topologyDatabase.getMicroTargets(currentLocationIdState.value)
 
-                            debugLogs.add(0, "📊 --- STATUS BAZY DANYCH ---")
-                            debugLogs.add(0, "📱 Urządzenia (${devices.size}): " + devices.joinToString(", ") { it.macAddress })
-                            debugLogs.add(0, "📍 Cele Makro (${macro.size}): " + macro.joinToString(", ") { it.name })
-                            debugLogs.add(0, "🎯 Cele Mikro dla Loc=${currentLocationIdState.value} (${micro.size})")
-                            debugLogs.add(0, "📊 ---------------------------")
+                            //z apki do espa
+                            appToEspLogs.add(0, "📊 --- STATUS BAZY DANYCH ---")
+                            appToEspLogs.add(0, "📱 Urządzenia (${devices.size}): " + devices.joinToString(", ") { it.macAddress })
+                            appToEspLogs.add(0, "📍 Cele Makro (${macro.size}): " + macro.joinToString(", ") { it.name })
+                            appToEspLogs.add(0, "🎯 Cele Mikro dla Loc=${currentLocationIdState.value} (${micro.size})")
+                            appToEspLogs.add(0, "📊 ---------------------------")
 
 
                         }
@@ -139,17 +149,29 @@ class MainActivity : ComponentActivity() {
     // Wyciągnięte do osobnej funkcji, żeby kod był czystszy
     private suspend fun fetchDatabase() {
         try {
-            debugLogs.add(0, "📡 Pobieram mapę budynku...")
+            appToEspLogs.add(0, "📡 Łączę z PostgreSQL...")
             val allDevices = RetrofitClient.apiService.getAllDevices()
-            topologyDatabase.cachedDevices = allDevices
-
             val allTargets = RetrofitClient.apiService.getNavigationTargets()
+
+            topologyDatabase.cachedDevices = allDevices
             topologyDatabase.cachedTargets = allTargets
 
-            debugLogs.add(0, "✅ Cache gotowy: ${allDevices.size} dev, ${allTargets.size} celów.")
+            // ⚠️ Zmuszamy Jetpack Compose do odświeżenia UI ⚠️
+            dbSyncVersion.value += 1
+
+            appToEspLogs.add(0, "📊 --- STATUS BAZY DANYCH ---")
+            appToEspLogs.add(
+                0,
+                "📱 Urządzenia (${allDevices.size}): " + allDevices.joinToString(", ") { it.macAddress })
+            appToEspLogs.add(
+                0,
+                "📍 Cele Makro (${allTargets.count { it.isMacroTarget }}): " + allTargets.filter { it.isMacroTarget }
+                    .joinToString(", ") { it.name })
+            appToEspLogs.add(0, "📊 ---------------------------")
+
         } catch (e: Exception) {
-            debugLogs.add(0, "❌ BŁĄD API: ${e.message}")
-            e.printStackTrace()
+            appToEspLogs.add(0, "❌ BŁĄD API: ${e.message}")
+
         }
     }
 
@@ -185,7 +207,7 @@ fun NavigationScreen(
     onTestApiClick: () -> Unit, // <--- NOWY PARAMETR (Callback)
     currentLocationId: Int?, // Musisz przekazać to z MainActivity/RoutingEngine
     topologyDb: BuildingTopologyDatabase,
-    currentEspFilter: String, // <--- dane wysylane APP->ESP
+    appToEspLogs: List<String>, // NOWA KONSOLA WYCHODZĄCA
     currentTargetName: String,
 
 ) {
@@ -254,6 +276,7 @@ fun NavigationScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+        //obie nie dzialaja nic sie nie zmienia nie da sie kliknac- zwykly tekst
         // ==========================================================
         // 5. LISTA MAKRO (Przekazanie zmiennej 'macroTargets' do UI)
         // ==========================================================
@@ -290,29 +313,21 @@ fun NavigationScreen(
                 }
             }
         }
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
 
-        //moze jakis input jako 'set target' gdzie uztkownik po przejrzeniu makro/mikro listy moze wpisac mac/id celu
-        // 🔥 NOWOŚĆ: DEDYKOWANY PANEL STANU ESP32 🔥
+        // 🔥 [3] NOWA KONSOLA: APP -> ESP / DATABASE 🔥
         Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)) // Ciemnoszary
+            modifier = Modifier.fillMaxWidth().height(100.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    text = "📡 Aktualny filtr załadowany do ESP32:",
-                    color = Color.Yellow,
-                    style = MaterialTheme.typography.labelLarge
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                // Tutaj wyświetli się np. U:0x001;B:ff:ff:12...
-                Text(
-                    text = currentEspFilter,
-                    color = Color.White,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 14.sp
-                )
+            Column(modifier = Modifier.padding(8.dp)) {
+                Text("APP -> ESP / DATABASE:", color = Color.Yellow, style = MaterialTheme.typography.labelMedium)
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(appToEspLogs) { msg ->
+                        Text(msg, color = Color.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    }
+                }
             }
         }
 
