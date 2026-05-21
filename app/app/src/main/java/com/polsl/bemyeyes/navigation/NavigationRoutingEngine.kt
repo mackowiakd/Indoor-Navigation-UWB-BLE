@@ -81,6 +81,8 @@ class NavigationRoutingEngine(
 
     // =========================================================================
     // AKCJE Z BLUETOOTHA (Logika mijania i dotarcia)
+
+    //- obsluga ID z kotwicy (rzutowanie na opwiedni format z DB?)
     // =========================================================================
     fun processNewTelemetryData(macAddress: String, distanceOrRssi: Double) {
 
