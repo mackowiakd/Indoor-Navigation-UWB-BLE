@@ -1,8 +1,11 @@
 
 /*
 Zaproponujmy taki format ładunku (Payload):
-U:123;B:ff:ff:12:b1:64:d1,a8:03:2a:b8:ee:fa
+U_1=4.20;U_2=1.85;B_ff:ff:12:b1:64:d1=3.10,B_a8:03:2a:b8:ee:fa=5.60;
 
+Znak : -> "Aha, nadchodzi lista, rozcinam po przecinkach".
+
+Znak = -> "Aha, to jest pomiar, wrzucam do bazy danych".
 */
 #include "app_data.h"
 
@@ -21,7 +24,7 @@ bool AppDataManager::parseBlePayload(String payload) {
     int bleIndex = payload.indexOf(";B:");
 
     if (uwbIndex == -1 || bleIndex == -1) {
-        Serial.println("[AppData][ERR] Zły format! Oczekiwano np. U:123;B:mac1,mac2");
+        Serial.println("[AppData][ERR] Zły format! Oczekiwano np. U_1=4.20;B_ff:ff:12:b1:64:d1=3.10");
         return false;
     }
 
@@ -34,14 +37,14 @@ bool AppDataManager::parseBlePayload(String payload) {
         String idStr = uwbStr.substring(0, commaIndex);
         idStr.trim();
         if (idStr.length() > 0) {
-            active_uwb_anchors.push_back((uint8_t)idStr.toInt()); // Magia! Tekst "10" staje się liczbą 10
+            active_uwb_anchors.push_back({(uint8_t)idStr.toInt(), -1.0f}); // Magia! Tekst "10" staje się liczbą 10
         }
         uwbStr = uwbStr.substring(commaIndex + 1);
     }
     // Dodajemy ostatnie ID z listy
     uwbStr.trim();
     if (uwbStr.length() > 0) {
-        active_uwb_anchors.push_back((uint8_t)uwbStr.toInt());
+        active_uwb_anchors.push_back({(uint8_t)uwbStr.toInt(), -1.0f});
     }
 
     // --- PARSOWANIE TAGÓW BLE ---
@@ -67,14 +70,7 @@ bool AppDataManager::parseBlePayload(String payload) {
     return true;
 }
 
-uint8_t AppDataManager::getUwbAnchorCount() {
-    return active_uwb_anchors.size();
-}
 
-uint8_t AppDataManager::getUwbAnchorId(uint8_t index) {
-    if (index < active_uwb_anchors.size()) return active_uwb_anchors[index];
-    return '\0';
-}
 
 bool AppDataManager::isTargetBleDevice(const std::string& mac) {
     for (const auto& device : target_ble_devices) {
@@ -96,18 +92,32 @@ void AppDataManager::updateBleDistance(const std::string& mac, float newDist, fl
        
     }
 }
+void AppDataManager::updateUwbDistance(uint8_t anchorId, float newDist) {
+    for (auto& anchor : active_uwb_anchors) {
+        if (anchor.id == anchorId) {
+            anchor.distance = newDist;
+            return;
+        }
+    }
+};
 
-String AppDataManager::getAggregatedData(float current_uwb_distance) {
-    // Format docelowy: UWB:2.45;BLE_b164d1:1.50;BLE_b8eefa:3.20
-    //kotwice chyba nie potrzebuja dawac ID bo nie sa trigerrami ,jeydnie dane uzteczne
-    String payload = "UWB:" + String(current_uwb_distance, 2);
+String AppDataManager::getAggregatedData() {
+    String payload = "";
+    
+    // 1. Sklejamy odległości Kotwic UWB (np. U_1=2.45;U_2=5.10;)
+    for (const auto& anchor : active_uwb_anchors) {
+        if (anchor.distance > 0) {
+            payload += "U_" + String(anchor.id) + "=" + String(anchor.distance, 2) + ";";
+        }
+    }
     
     for (const auto& device : target_ble_devices) {
         if (device.distance > 0) {
         // Wysyłamy PEŁNY MAC. Używamy znaku '=' żeby oddzielić MAC od dystansu!
         // Format docelowy: UWB:2.45;BLE_ff:ff:12:b1:64:d1=1.50
-        payload += ";BLE_" + String(device.mac.c_str()) + "=" + String(device.distance, 2);
-    }
+        payload += "B_" + String(device.mac.c_str()) + "=" + String(device.distance, 2)+ ";";
+        }
+     
     }
     return payload;
 }
@@ -116,9 +126,9 @@ void AppDataManager::printCurrentState() {
     Serial.print("[AppData] Zaktualizowane Kotwice UWB (");
     Serial.print(active_uwb_anchors.size());
     Serial.print("): ");
-    for (int i = 0; i < active_uwb_anchors.size(); i++) {
-        Serial.print(active_uwb_anchors[i]);
-        Serial.print(" ");
+    
+     for (const auto& device : active_uwb_anchors) {
+        Serial.printf("%s ", device.id);
     }
     Serial.println();
 

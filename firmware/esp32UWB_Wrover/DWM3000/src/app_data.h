@@ -10,28 +10,44 @@ struct BleDeviceData {
     std::string mac;
     float distance;
 };
+struct UwbDeviceData {
+    uint8_t id;
+    float distance;
+};
 
 class AppDataManager {
 private:
-    std::vector<uint8_t> active_uwb_anchors; // Teraz to wektor liczb (ID od 1 do 255)!
+    std::vector<UwbDeviceData> active_uwb_anchors;
     std::vector<BleDeviceData> target_ble_devices;
 
 public:
     AppDataManager();
 
+    int getActiveUwbAnchorCount() {
+        return active_uwb_anchors.size();
+    }   
+    std::vector<uint8_t> getActiveUwbAnchors() {
+        std::vector<uint8_t> ids;
+        for (const auto& anchor : active_uwb_anchors) {
+            ids.push_back(anchor.id);
+        }
+        return ids;
+    }
+
+     std::vector<BleDeviceData> getTargetBleDevices() {
+        return target_ble_devices;
+    }
     // 1. GŁÓWNY PARSER (Rozcina "U:123;B:mac1,mac2")
     bool parseBlePayload(String payload);
 
-    // 2. FUNKCJE DLA UWB
-    uint8_t getUwbAnchorCount();
-    uint8_t getUwbAnchorId(uint8_t index);
-
+    
     // 3. FUNKCJE DLA BLE
     bool isTargetBleDevice(const std::string& mac);
     void updateBleDistance(const std::string& mac, float newDist, float emaAlpha);
+    void updateUwbDistance(uint8_t anchorId, float newDist);
 
     // 4. GENERATOR PACZKI DO WYSYŁKI NA TELEFON
-    String getAggregatedData(float current_uwb_distance);
+    String getAggregatedData();
 
     // Narzędzia
     void printCurrentState();

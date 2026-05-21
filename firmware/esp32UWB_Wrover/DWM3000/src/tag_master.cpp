@@ -17,6 +17,7 @@ float distTag1 = -1.0;
 float distTag2 = -1.0;
 float UWB_dist = -1.0;
 
+
 NimBLEServer* pServer = NULL;
 NimBLECharacteristic* pCharacteristic = NULL;
 NimBLECharacteristic* pFilterCharacteristic = NULL;
@@ -143,7 +144,7 @@ void TaskNotify(void *pvParameters) {
                
                 // TUTAJ ZBIERAMY DANE: UWB_dist jest na bieżąco aktualizowane przez DW3000 w pętli loop()!
 
-                String uwb_data = appData.getAggregatedData(UWB_dist);
+                String uwb_data = appData.getAggregatedData();
                 pCharacteristic->setValue((uint8_t*)uwb_data.c_str(), uwb_data.length());
                 pCharacteristic->notify();
             }
@@ -232,8 +233,8 @@ void setup() {
 void loop() {
     // Odpytujemy każdą Kotwicę po kolei
 
-    for (uint8_t i = 0; i < appData.getUwbAnchorCount(); i++) {
-        uint8_t target_id = appData.getUwbAnchorId(i);
+    for (int i = 0; i < appData.getActiveUwbAnchorCount(); i++) {
+        uint8_t target_id = appData.getActiveUwbAnchors()[i];
        
         tx_poll_msg[8]   = target_id; // Kogo wołam (Kotwica)
         rx_resp_msg[7]   = target_id; // Od kogo czekam na odp (Kotwica)
@@ -355,7 +356,7 @@ void loop() {
                                     Serial.println(clean_distance);
 
                                     // 3. TUTAJ AKTUALIZUJESZ ZMIENNĄ DLA BLUETOOTHA!
-                                    UWB_dist = clean_distance;
+                                    appData.updateUwbDistance(target_id, clean_distance);
                                     dA1 = true; // flaga, że mamy już pomiar od A1 (żeby nie mieszać danych z różnych cykli)
                                 }
                             }else {
