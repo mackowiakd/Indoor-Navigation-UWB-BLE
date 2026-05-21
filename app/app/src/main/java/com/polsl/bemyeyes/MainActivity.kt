@@ -38,14 +38,11 @@ class MainActivity : ComponentActivity() {
     private lateinit var routingEngine: NavigationRoutingEngine
     private lateinit var bleManager: BleConnectionManager
 
-    // Stan trzymający logi, obserwowany przez UI (Jetpack Compose)
-    protected val debugLogs = mutableStateListOf<String>()
-    // Stan Compose, który pamięta gdzie jesteśmy (np. Location_ID = 2)
-    private val currentLocationIdState = mutableStateOf<Int?>(null)
-
-    // --- KONSOLA 2: Wysyłka z Apki (APP -> ESP) ---
-    private val appToEspLogs = mutableStateListOf<String>() //  Pamięta ostatnio wysłany filtr
+    protected val debugLogs = mutableStateListOf<String>()  // Stan trzymający logi, obserwowany przez UI (Jetpack Compose)
+    private val currentLocationIdState = mutableStateOf<Int?>(null)  // Stan Compose, który pamięta gdzie jesteśmy (np. Location_ID = 2)
+    private val appToEspLogs = mutableStateListOf<String>() // --- KONSOLA 2: Wysyłka z Apki (APP -> ESP) ---
     private val currentTargetNameState = mutableStateOf("Brak celu (Wybierz coś z listy)")
+    private val dbSyncVersion = mutableStateOf(0) //oberwowany przez Compose - informuje o zmiane w DB
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -80,9 +77,8 @@ class MainActivity : ComponentActivity() {
                 val scope = rememberCoroutineScope()
                 // Odczytujemy stan lokalizacji. Gdy się zmieni, UI się przebuduje!
                 val currentLocation = currentLocationIdState.value
-                val appLogs = appToEspLogs.first()// <--- Odczytujemy stan
-                // Pamięta nazwę celu, do którego aktualnie idziemy
-                // MAGIA COMPOSE: Teraz kiedy dbVer się zmieni, Kotlin obliczy listy na nowo!
+
+                val dbVer = dbSyncVersion.value // <--- obserwujemy wersje bazy
                 val macroList = remember(dbVer) { topologyDatabase.getMacroTargets() }
                 val microList = remember(currentLocation, dbVer) { topologyDatabase.getMicroTargets(currentLocation) }
 
@@ -93,24 +89,23 @@ class MainActivity : ComponentActivity() {
                         logs = debugLogs,
                         currentLocationId = currentLocation, // PRZEKAZUJEMY STAN
                         topologyDb = topologyDatabase,
-                        appLogs = appToEspLogs,
+                        appToEspLogs = appToEspLogs,
                         currentTargetName = currentTargetNameState.value,
+                        // PRZEKAZUJEMY GOTOWE, ŻYWE LISTY DO UI:
+                        macroTargets = macroList,
+                        microTargets = microList,
 
 
                         onStartNavigation = { target ->
 
+                            routingEngine.setNavigationTarget(target)
+                            currentTargetNameState.value = target.name
                             if (target.associatedMac != null) {
-                                // 1. KLUCZOWE UZUPEŁNIENIE: Budzimy silnik nawigacji i przekazujemy cel!
-                                routingEngine.setNavigationTarget(target)
-                                currentTargetNameState.value = target.name
-                                // TRYB MIKRO: Celujemy w konkretny przedmiot
                                 debugLogs.add(0, "🎯 Tryb Precyzyjny: Szukam ${target.name}")
                                 val singleDevice = listOfNotNull(topologyDatabase.getDeviceByMac(target.associatedMac))
                                 bleManager.sendFilterToEsp(singleDevice)
                             } else {
-                                // TRYB MAKRO: Szukamy wejścia do strefy
                                 debugLogs.add(0, "📍 Tryb Eksploracji: Kieruj do ${target.name}")
-                                // Pobieramy wszystkie kotwice/tagi dla tej lokalizacji
                                 val areaDevices = topologyDatabase.getDevicesForLocation(target.locationId)
                                 bleManager.sendFilterToEsp(areaDevices)
                             }
@@ -124,22 +119,7 @@ class MainActivity : ComponentActivity() {
                         debugLogs.add(0, "🛑 Wymuszono rozłączenie (Manual)")
                          },
                         onTestApiClick = {
-                            // Co robi przycisk Test API? Służy jako "Ręczne Odświeżenie"
                             scope.launch { fetchDatabase() }
-                            //loging/printing current location list mikro & makro
-                            // --- LOGOWANIE ZAWARTOŚCI BAZY ---
-                            val devices = topologyDatabase.cachedDevices
-                            val macro = topologyDatabase.getMacroTargets()
-                            val micro = topologyDatabase.getMicroTargets(currentLocationIdState.value)
-
-                            //z apki do espa
-                            appToEspLogs.add(0, "📊 --- STATUS BAZY DANYCH ---")
-                            appToEspLogs.add(0, "📱 Urządzenia (${devices.size}): " + devices.joinToString(", ") { it.macAddress })
-                            appToEspLogs.add(0, "📍 Cele Makro (${macro.size}): " + macro.joinToString(", ") { it.name })
-                            appToEspLogs.add(0, "🎯 Cele Mikro dla Loc=${currentLocationIdState.value} (${micro.size})")
-                            appToEspLogs.add(0, "📊 ---------------------------")
-
-
                         }
                     )
                 }
@@ -200,7 +180,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun NavigationScreen(
     modifier: Modifier = Modifier,
-    logs: List<String>,
+    logs: List<String>, //esp-> app
     onStartNavigation: (NavigationTarget) -> Unit, // zamiast string?? bo potrzebujemy tez mac adressu
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
@@ -208,12 +188,13 @@ fun NavigationScreen(
     currentLocationId: Int?, // Musisz przekazać to z MainActivity/RoutingEngine
     topologyDb: BuildingTopologyDatabase,
     appToEspLogs: List<String>, // NOWA KONSOLA WYCHODZĄCA
+    macroTargets: List<NavigationTarget>,
+    microTargets: List<NavigationTarget>,
     currentTargetName: String,
 
+
 ) {
-    // 1. TWORZYMY LISTY NA PODSTAWIE STANU LOKALIZACJI bo zapomnialam "wyciągnąć" te listy z bazy wewnątrz funkcji @Composable.
-    val macroTargets = topologyDb.getMacroTargets()
-    val microTargets = topologyDb.getMicroTargets(currentLocationId)
+
 
     Column(
         modifier = modifier.fillMaxSize().padding(16.dp),
