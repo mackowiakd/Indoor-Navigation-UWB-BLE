@@ -30,6 +30,7 @@ class NavigationRoutingEngine(
 
     fun setNavigationTarget(target: NavigationTarget) {
         // RESETUJEMY FLAGI PRZY WYBORZE NOWEGO CELU!
+        //brak COLD start- > target null usatwiamy makro w
         reachAnnounced10 = false
         reachAnnounced15 = false
         lastAnnouncedDistanceInt = -1
