@@ -122,42 +122,50 @@ class BleConnectionManager(
             }
         }
     }
-    //@TODO metoda Notify/send do ESP (lista urzadzen z  danego obszaru)
-    // data from DB must be already cached (new file/ struct for storing it?
-    //
+
     private fun extractProximityData(payload: String) {
         try {
-            // Nowa logika w Androidzie:
+        //Każda Kotwica w telefonie będzie miała swoje ID (np. 1, 2) i Kotlin musi dostać jasny raport: U_1=2.45;U_2=5.10;B_ff:ff...=1.50.
+           // uwb tez musi miec ID
             val records = payload.split(";")
-            //@TODO fukcja do walidacji czy dotarlismy odpowiednio blisko granciznego taga BLE
-            // if (trigger ble)
-            //      evoke Notify with new list (selected from cached DB)
+
             for (record in records) {
-                val parts = record.trim().split(":")
-                if (parts.size == 2) {
-                    val id = parts[0].trim()
-                    val dist = parts[1].trim().toDoubleOrNull()
+                var id = ""
+                var dist: Double? = null
 
-                    if (dist != null) {
-                        // 1. Dajemy odebrany skan do Mózgu.
-                        // Jeśli Mózg uzna, że to Zimny Start lub zmiana piętra, zwróci nową listę!
-                        val newDevicesToSend = routingEngine.processScannedDevice(id, dist)
+                // PARSOWANIE ZGODNE Z NOWYM FORMATEM ESP32
+                if (record.startsWith("UWB:")) {
+                    id = "UWB" //to co jest po "UWB"
+                    dist = record.substringAfter("UWB:").toDoubleOrNull()
+                } else if (record.startsWith("BLE_")) {
+                    // Oczekiwany format: BLE_ff:ff:12:b1:64:d1=1.50
+                    val bleData = record.substringAfter("BLE_")
+                    id = bleData.substringBefore("=").trim() // Wyciągamy czysty MAC
+                    dist = bleData.substringAfter("=").toDoubleOrNull()
+                }
 
-                        // 2. Czy jest coś do wysłania?
-                        if (newDevicesToSend != null) {
-                            sendFilterToEsp(newDevicesToSend) // Wysyłamy!
-                        }
+                if (dist != null) {
+                    // 1. ZIMNY START: Pytamy silnik, czy ten MAC to nowe piętro?
+                    // routingEngine sprawdzi to w bazie i ew. zwróci nam całą listę!
+                    val newDevicesToSend = routingEngine.processScannedDevice(id, dist)
 
-                        // 3. Wywołujemy główny wątek UI, aby wyświetlić pozycję na ekranie
-                            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                routingEngine.processNewTelemetryData(id, dist)
-
-                        }
+                    // 2. Czy jest coś do wysłania?
+                    if (newDevicesToSend != null) {
+                        sendFilterToEsp(newDevicesToSend) // Wysyłamy!
+                        // Zmuszamy UI do odświeżenia (żeby pojawiły się przyciski mikro)
+                        update_dev_list = !update_dev_list
                     }
-                    else {
-                        postLog(" brak danych od $id: $payload")
+
+                    // 3. Wywołujemy główny wątek UI, aby wyświetlić pozycję na ekranie
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            routingEngine.processNewTelemetryData(id, dist)
+
                     }
                 }
+                else {
+                    postLog(" brak danych od $id: $payload")
+                }
+
 
 
             }
