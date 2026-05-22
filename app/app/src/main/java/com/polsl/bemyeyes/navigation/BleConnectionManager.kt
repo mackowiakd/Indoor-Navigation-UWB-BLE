@@ -133,17 +133,19 @@ class BleConnectionManager(
                 var id = ""
                 var dist: Double? = null
 
-                // PARSOWANIE ZGODNE Z NOWYM FORMATEM ESP32
-                if (record.startsWith("UWB:")) {
-                    id = "UWB" //to co jest po "UWB"
-                    dist = record.substringAfter("UWB:").toDoubleOrNull()
-                } else if (record.startsWith("BLE_")) {
-                    // Oczekiwany format: BLE_ff:ff:12:b1:64:d1=1.50
-                    val bleData = record.substringAfter("BLE_")
-                    id = bleData.substringBefore("=").trim() // Wyciągamy czysty MAC
-                    dist = bleData.substringAfter("=").toDoubleOrNull()
-                }
+                // PARSOWANIE DANYCH ZESP32 (Format: KLUCZ=WARTOŚĆ)
+                if (record.startsWith("U_")) {
+                    // record to np. "U_1=2.45" lub "U_11=2.45"
+                    // substringBefore("=") da nam "U_1", a substringAfter("U_") wyciągnie czyste ID: "1" lub "11"
+                    id = record.substringBefore("=").substringAfter("U_").trim()
+                    dist = record.substringAfter("=").toDoubleOrNull()
 
+                } else if (record.startsWith("B_")) {
+                    // record to np. "B_ff:ff:12:b1:64:d1=1.50"
+                    // substringBefore("=") da nam "B_ff:ff...", a substringAfter("B_") wyciągnie czysty MAC
+                    id = record.substringBefore("=").substringAfter("B_").trim()
+                    dist = record.substringAfter("=").toDoubleOrNull()
+                }
                 if (dist != null) {
                     // 1. ZIMNY START: Pytamy silnik, czy ten MAC to nowe piętro?
                     // routingEngine sprawdzi to w bazie i ew. zwróci nam całą listę!
