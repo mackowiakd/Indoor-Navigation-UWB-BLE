@@ -13,9 +13,6 @@
 const std::string MOCK_TAG_1_MAC = "ff:ff:12:b1:64:d1"; // desk 
 const std::string MOCK_TAG_2_MAC = "a8:03:2a:b8:ee:fa"; // coffe 
 
-float distTag1 = -1.0;
-float distTag2 = -1.0;
-float UWB_dist = -1.0;
 
 
 NimBLEServer* pServer = NULL;
@@ -357,7 +354,7 @@ void loop() {
 
                                     // 3. TUTAJ AKTUALIZUJESZ ZMIENNĄ DLA BLUETOOTHA!
                                     appData.updateUwbDistance(target_id, clean_distance);
-                                    dA1 = true; // flaga, że mamy już pomiar od A1 (żeby nie mieszać danych z różnych cykli)
+                                    // dA1 = true; // flaga, że mamy już pomiar od A1 (żeby nie mieszać danych z różnych cykli)
                                 }
                             }else {
                                 Serial.println("[TAG] Błąd fizyki! Surowy dystans poza zakresem 0-100m.");
@@ -381,7 +378,9 @@ void loop() {
         };
 
         frame_seq_nb++; // inkrementacja numeru sekwencyjnego dla kolejnych cykli
-                  
+        // KRYTYCZNE DLA WIELU KOTWIC: Antena musi "ostygnąć" i zresetować rejestry przed kolejnym cyklem pętli FOR!
+        //dwt_rxreset(); // Wymuszamy reset układu odbiorczego
+        delay(40);     
     }  
 
     // --- Rekonekcja BLE ---

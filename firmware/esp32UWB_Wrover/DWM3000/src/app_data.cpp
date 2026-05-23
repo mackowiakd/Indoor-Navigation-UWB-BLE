@@ -37,7 +37,9 @@ bool AppDataManager::parseBlePayload(String payload) {
         String idStr = uwbStr.substring(0, commaIndex);
         idStr.trim();
         if (idStr.length() > 0) {
-            active_uwb_anchors.push_back({(uint8_t)idStr.toInt(), -1.0f}); // Magia! Tekst "10" staje się liczbą 10
+          // strtol automatycznie rozpoznaje "0x" i konwertuje szesnastkowy tekst na czystą liczbę uint8_t
+            uint8_t parsedId = (uint8_t)strtol(idStr.c_str(), NULL, 16);
+            active_uwb_anchors.push_back({parsedId, -1.0f});
         }
         uwbStr = uwbStr.substring(commaIndex + 1);
     }
@@ -107,15 +109,16 @@ String AppDataManager::getAggregatedData() {
     // 1. Sklejamy odległości Kotwic UWB (np. U_1=2.45;U_2=5.10;)
     for (const auto& anchor : active_uwb_anchors) {
         if (anchor.distance > 0) {
-            payload += "U_" + String(anchor.id) + "=" + String(anchor.distance, 2) + ";";
+            // %04X oznacza: "Wydrukuj jako HEX (X), użyj 4 znaków (4), brakujące uzupełnij zerami (0)"
+            Serial.printf("0x%04X ", anchor.id);
         }
     }
     
     for (const auto& device : target_ble_devices) {
         if (device.distance > 0) {
-        // Wysyłamy PEŁNY MAC. Używamy znaku '=' żeby oddzielić MAC od dystansu!
-        // Format docelowy: UWB:2.45;BLE_ff:ff:12:b1:64:d1=1.50
-        payload += "B_" + String(device.mac.c_str()) + "=" + String(device.distance, 2)+ ";";
+            // Wysyłamy PEŁNY MAC. Używamy znaku '=' żeby oddzielić MAC od dystansu!
+            // Format docelowy: UWB:2.45;BLE_ff:ff:12:b1:64:d1=1.50
+            payload += "B_" + String(device.mac.c_str()) + "=" + String(device.distance, 2)+ ";";
         }
      
     }
@@ -128,7 +131,8 @@ void AppDataManager::printCurrentState() {
     Serial.print("): ");
     
      for (const auto& device : active_uwb_anchors) {
-        Serial.printf("%s ", device.id);
+       // %04X oznacza: "Wydrukuj jako HEX (X), użyj 4 znaków (4), brakujące uzupełnij zerami (0)"
+        Serial.printf("0x%04X ", device.id);
     }
     Serial.println();
 
@@ -136,7 +140,7 @@ void AppDataManager::printCurrentState() {
     Serial.print(target_ble_devices.size());
     Serial.print("): ");
     for (const auto& device : target_ble_devices) {
-        Serial.printf("%s ", device.mac.c_str());
+        Serial.printf("%d ", device.mac.c_str());
     }
     Serial.println("\n");
 
