@@ -351,10 +351,14 @@ void loop() {
                                     Serial.print(target_id);
                                     Serial.print(": ");
                                     Serial.println(clean_distance);
+                                    Serial.println("\n");
 
                                     // 3. TUTAJ AKTUALIZUJESZ ZMIENNĄ DLA BLUETOOTHA!
                                     appData.updateUwbDistance(target_id, clean_distance);
                                     // dA1 = true; // flaga, że mamy już pomiar od A1 (żeby nie mieszać danych z różnych cykli)
+                                }
+                                else {
+                                    Serial.println("[TAG] UWB filter not ready (not enough data).");
                                 }
                             }else {
                                 Serial.println("[TAG] Błąd fizyki! Surowy dystans poza zakresem 0-100m.");
@@ -378,9 +382,10 @@ void loop() {
         };
 
         frame_seq_nb++; // inkrementacja numeru sekwencyjnego dla kolejnych cykli
-        // KRYTYCZNE DLA WIELU KOTWIC: Antena musi "ostygnąć" i zresetować rejestry przed kolejnym cyklem pętli FOR!
-        //dwt_rxreset(); // Wymuszamy reset układu odbiorczego
-        delay(40);     
+      
+        //  Twarde wyczyszczenie wszystkich flag błędów z rejestru systemowego, 
+        dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK);
+        delay(60);     
     }  
 
     // --- Rekonekcja BLE ---
