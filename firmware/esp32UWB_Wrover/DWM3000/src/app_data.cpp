@@ -46,7 +46,9 @@ bool AppDataManager::parseBlePayload(String payload) {
     // Dodajemy ostatnie ID z listy
     uwbStr.trim();
     if (uwbStr.length() > 0) {
-        active_uwb_anchors.push_back({(uint8_t)uwbStr.toInt(), -1.0f});
+        // TUTAJ TEŻ MUSI BYĆ strtol, inaczej wyjdzie 0!
+        uint8_t parsedId = (uint8_t)strtol(uwbStr.c_str(), NULL, 16);
+        active_uwb_anchors.push_back({parsedId, -1.0f});
     }
 
     // --- PARSOWANIE TAGÓW BLE ---
@@ -119,7 +121,10 @@ String AppDataManager::getAggregatedData() {
             // Wysyłamy PEŁNY MAC. Używamy znaku '=' żeby oddzielić MAC od dystansu!
             // Format docelowy: UWB:2.45;BLE_ff:ff:12:b1:64:d1=1.50
             payload += "B_" + String(device.mac.c_str()) + "=" + String(device.distance, 2)+ ";";
-        }
+            Serial.printf("%s ", device.mac.c_str()); 
+    }
+    Serial.println("\n");
+       
      
     }
     return payload;
@@ -140,7 +145,7 @@ void AppDataManager::printCurrentState() {
     Serial.print(target_ble_devices.size());
     Serial.print("): ");
     for (const auto& device : target_ble_devices) {
-        Serial.printf("%d ", device.mac.c_str());
+        Serial.printf("%s ", device.mac.c_str());
     }
     Serial.println("\n");
 
