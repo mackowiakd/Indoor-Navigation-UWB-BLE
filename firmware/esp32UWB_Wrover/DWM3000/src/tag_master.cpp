@@ -43,10 +43,9 @@ class MyWriteCallbacks: public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic* pCharacteristic) {
         std::string rxValue = pCharacteristic->getValue();
         if(rxValue.length() > 0) {
-            //mock ble list hardcoded for tests
-          // Automatycznie doklejamy "U:" na początek i ";B:MAC1,MAC2" na koniec
-          //UWAGA TO WTTW GDY TESTUJEMY Z nRF CONNECT 
-           // String payload = "U:" + String(rxValue.c_str()) + ";B:" + String(MOCK_TAG_1_MAC.c_str()) + "," + String(MOCK_TAG_2_MAC.c_str());
+          
+          //UWAGA TO WTTW GDY TESTUJEMY Z nRF CONNECT -> wpisac z palca np U:0x0001,0x0002;B:a8:03:2a:b8:ee:fa
+
            //APKA sama sklada odpowiedni format, więc tu wystarczy przekazać to co przyszło
             String payload = String(rxValue.c_str());
             appData.parseBlePayload(payload);
@@ -67,10 +66,10 @@ class MyAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
         // TRYB 1: NAWIGACJA (Mamy już listę od aplikacji z telefonu)
         // ---------------------------------------------------------
         if (appData.hasBleTargets()) { 
-            // hasBleTargets() to funkcja którą musisz dodać, zwraca true jeśli vector nie jest pusty
+            // hasBleTargets() to funkcja ktr zwraca true jeśli vector nie jest pusty
             
             if (appData.isTargetBleDevice(deviceMac)) {
-                // To jest nasz cel! Aktualizujemy dystans.
+              
                 appData.updateBleDistance(deviceMac, calculateDistance(currentRssi), EMA_ALPHA);
             }
             return; // Kończymy, nie interesują nas inne urządzenia!
@@ -138,12 +137,16 @@ void TaskNotify(void *pvParameters) {
                 pCharacteristic->notify();
                 newFilterReceived = false;
             } else {
-               
                 // TUTAJ ZBIERAMY DANE: UWB_dist jest na bieżąco aktualizowane przez DW3000 w pętli loop()!
 
-                String uwb_data = appData.getAggregatedData();
-                pCharacteristic->setValue((uint8_t*)uwb_data.c_str(), uwb_data.length());
-                pCharacteristic->notify();
+                // Wysyłamy do telefonu TYLKO jeśli zebraliśmy jakiś pomiar > 0
+                 String uwb_data = appData.getAggregatedData();
+                if (uwb_data.length() > 0) {
+                    pCharacteristic->setValue((uint8_t*)uwb_data.c_str(), uwb_data.length());
+                    pCharacteristic->notify();
+                    Serial.println("[NOTIFY] Wysyłam dane do telefonu: " + uwb_data);
+                }
+             
             }
         }
         vTaskDelay(100 / portTICK_PERIOD_MS); 
