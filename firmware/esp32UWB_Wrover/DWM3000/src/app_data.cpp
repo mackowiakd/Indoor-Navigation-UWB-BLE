@@ -83,6 +83,7 @@ bool AppDataManager::parseBlePayload(String payload) {
 
 
 bool AppDataManager::isTargetBleDevice(const std::string& mac) {
+    std::lock_guard<std::mutex> lock(dataMutex);
     for (const auto& device : target_ble_devices) {
         if (device.mac == mac) return true;
     }
@@ -142,7 +143,7 @@ String AppDataManager::getAggregatedData() {
 }
 
 void AppDataManager::printCurrentState() {
-    std::lock_guard<std::mutex> lock(dataMutex);
+   // same lock is foribben here, because this function is called inside parseBlePayload() which already has a lock_guard. We can end in deadlock if we try to lock again.
     Serial.print("[AppData] Zaktualizowane Kotwice UWB (");
     Serial.print(active_uwb_anchors.size());
     Serial.print("): ");
