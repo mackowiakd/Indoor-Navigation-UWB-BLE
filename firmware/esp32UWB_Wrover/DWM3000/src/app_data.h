@@ -6,6 +6,7 @@
 #define MAX_UWB_ANCHORS 10
 
 // Struktura trzymająca adres MAC i jego aktualny dystans
+//Prawdop wymaga MUTEXA dla asyn task BLE
 struct BleDeviceData {
     std::string mac;
     float distance;
