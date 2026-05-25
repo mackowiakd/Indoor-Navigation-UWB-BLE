@@ -17,8 +17,13 @@ AppDataManager::AppDataManager() {
     target_ble_devices.clear();
 }
 
+/*used by onWrite BLE callback 
+- updates the list of target devices and active anchors
+- expects payload in format: U:123,124;B:mac1,mac2
+*/
 bool AppDataManager::parseBlePayload(String payload) {
     Serial.println("\n[AppData] Otrzymano nową konfigurację: " + payload);
+    
 
     int uwbIndex = payload.indexOf("U:");
     int bleIndex = payload.indexOf(";B:");
@@ -30,6 +35,7 @@ bool AppDataManager::parseBlePayload(String payload) {
 
     // --- 1. PARSOWANIE KOTWIC UWB (Z przecinkami!) ---
     String uwbStr = payload.substring(uwbIndex + 2, bleIndex);
+    std:: lock_guard<std::mutex> lock(dataMutex); // shared varaible -> locking whole function scope
     active_uwb_anchors.clear(); // Czyścimy starą listę
 
     int commaIndex;
@@ -83,7 +89,9 @@ bool AppDataManager::isTargetBleDevice(const std::string& mac) {
     return false;
 }
 
+/*used by onWrite callback */
 void AppDataManager::updateBleDistance(const std::string& mac, float newDist, float emaAlpha) {
+    std::lock_guard<std::mutex> lock(dataMutex);
     for (auto& device : target_ble_devices) {
         if (device.mac == mac) {
             if (device.distance < 0) {
@@ -96,7 +104,9 @@ void AppDataManager::updateBleDistance(const std::string& mac, float newDist, fl
        
     }
 }
+/*used by uwb loop()*/
 void AppDataManager::updateUwbDistance(uint8_t anchorId, float newDist) {
+    std::lock_guard<std::mutex> lock(dataMutex);
     for (auto& anchor : active_uwb_anchors) {
         if (anchor.id == anchorId) {
             anchor.distance = newDist;
@@ -105,9 +115,10 @@ void AppDataManager::updateUwbDistance(uint8_t anchorId, float newDist) {
     }
 };
 
+/*used by TaskNotify() to prepare payload for smartphone*/
 String AppDataManager::getAggregatedData() {
     String payload = "";
-    
+    std::lock_guard<std::mutex> lock(dataMutex);
     // 1. Sklejamy odległości Kotwic UWB (np. U_1=2.45;U_2=5.10;)
     for (const auto& anchor : active_uwb_anchors) {
         if (anchor.distance > 0) {
@@ -131,6 +142,7 @@ String AppDataManager::getAggregatedData() {
 }
 
 void AppDataManager::printCurrentState() {
+    std::lock_guard<std::mutex> lock(dataMutex);
     Serial.print("[AppData] Zaktualizowane Kotwice UWB (");
     Serial.print(active_uwb_anchors.size());
     Serial.print("): ");
@@ -151,7 +163,9 @@ void AppDataManager::printCurrentState() {
 
    
 }
+
  void AppDataManager::addBleTarget(const std::string& mac) {
+        std::lock_guard<std::mutex> lock(dataMutex);
         if (!isTargetBleDevice(mac)) {
             target_ble_devices.push_back({mac, -1.0f});
         }

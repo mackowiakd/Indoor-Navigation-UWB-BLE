@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <vector>
 #include <string>
+#include <mutex>
 
 #define MAX_UWB_ANCHORS 10
 
@@ -18,6 +19,7 @@ struct UwbDeviceData {
 
 class AppDataManager {
 private:
+    std::mutex dataMutex; // <--- STRAŻNIK PAMIĘCI RAM
     std::vector<UwbDeviceData> active_uwb_anchors;
     std::vector<BleDeviceData> target_ble_devices;
 
