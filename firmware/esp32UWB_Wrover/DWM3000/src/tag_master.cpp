@@ -233,8 +233,13 @@ void setup() {
 void loop() {
     // Odpytujemy każdą Kotwicę po kolei
 
-    for (int i = 0; i < appData.getActiveUwbAnchorCount(); i++) {
-        uint8_t target_id = appData.getActiveUwbAnchors()[i];
+   // Odpytujemy każdą Kotwicę po kolei
+    int anchorCount = appData.getActiveUwbAnchorCount();
+    
+    for (int i = 0; i < anchorCount; i++) {
+        // Bezpieczne pobranie ID bez fragmentowania pamięci RAM!
+        uint8_t target_id = appData.getUwbAnchorId(i);
+        if (target_id == 0) continue;
        
         tx_poll_msg[8]   = target_id; // Kogo wołam (Kotwica)
         rx_resp_msg[7]   = target_id; // Od kogo czekam na odp (Kotwica)
@@ -358,7 +363,7 @@ void loop() {
 
                                     // 3. TUTAJ AKTUALIZUJESZ ZMIENNĄ DLA BLUETOOTHA!
                                     appData.updateUwbDistance(target_id, clean_distance);
-                                    // dA1 = true; // flaga, że mamy już pomiar od A1 (żeby nie mieszać danych z różnych cykli)
+                                   
                                 }
                                 else {
                                     Serial.println("[TAG] UWB filter not ready (not enough data).");
