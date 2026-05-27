@@ -171,3 +171,11 @@ void AppDataManager::printCurrentState() {
             target_ble_devices.push_back({mac, -1.0f});
         }
 }
+
+uint8_t AppDataManager::getUwbAnchorId(int index) {
+    std::lock_guard<std::mutex> lock(dataMutex);
+    if (index < active_uwb_anchors.size()) {
+        return active_uwb_anchors[index].id;
+    }
+    return 0;
+}

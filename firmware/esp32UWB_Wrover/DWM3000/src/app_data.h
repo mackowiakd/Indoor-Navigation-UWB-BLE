@@ -29,13 +29,7 @@ public:
     int getActiveUwbAnchorCount() {
         return active_uwb_anchors.size();
     }   
-    std::vector<uint8_t> getActiveUwbAnchors() {
-        std::vector<uint8_t> ids;
-        for (const auto& anchor : active_uwb_anchors) {
-            ids.push_back(anchor.id);
-        }
-        return ids;
-    }
+   uint8_t getUwbAnchorId(int index);
 
      std::vector<BleDeviceData> getTargetBleDevices() {
         return target_ble_devices;
