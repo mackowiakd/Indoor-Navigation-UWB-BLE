@@ -123,6 +123,11 @@ String AppDataManager::getAggregatedData() {
     // 1. Sklejamy odległości Kotwic UWB (np. U_1=2.45;U_2=5.10;)
     for (const auto& anchor : active_uwb_anchors) {
         if (anchor.distance > 0) {
+            char hexBuf[10];
+            // snprintf JEST BEZPIECZNE - sizeof(hexBuf) fizycznie blokuje wyciek pamięci!
+            snprintf(hexBuf, sizeof(hexBuf), "0x%04X", anchor.id);
+            
+            payload += "U_" + String(hexBuf) + "=" + String(anchor.distance, 2) + ";";
             // %04X oznacza: "Wydrukuj jako HEX (X), użyj 4 znaków (4), brakujące uzupełnij zerami (0)"
             Serial.printf("0x%04X ", anchor.id);
         }
