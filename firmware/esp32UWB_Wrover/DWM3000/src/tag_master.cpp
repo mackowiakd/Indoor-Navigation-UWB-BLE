@@ -322,7 +322,7 @@ void loop() {
                     
                     // 3. CZEKAMY NA PACZKĘ "REPORT" OD KOTWICY!
                     while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
-                        taskYIELD();
+                     
                     };
 
                     if (status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
