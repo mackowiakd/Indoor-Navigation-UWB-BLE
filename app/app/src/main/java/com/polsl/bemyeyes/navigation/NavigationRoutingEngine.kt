@@ -84,10 +84,10 @@ class NavigationRoutingEngine(
 
     //- obsluga ID z kotwicy (rzutowanie na opwiedni format z DB?)
     // =========================================================================
-    fun processNewTelemetryData(macAddress: String, distanceOrRssi: Double) {
+    fun processNewTelemetryData(device: IoTDevice, distanceOrRssi: Double) {
 
         // 1. Zidentyfikuj, co usłyszało ESP32
-        val detectedDevice = buildingTopologyDB.getDeviceByMac(macAddress) ?: return
+        val detectedDevice = buildingTopologyDB.getDeviceByMac(device.macAddress) ?: return
 
         // 2. LOGIKA DOTARCIA DO CELU (Czy jestem blisko tego, co zaklikałem w UI?)
         if (currentTarget != null) {
@@ -103,18 +103,17 @@ class NavigationRoutingEngine(
                 }
             } else {
                 // TRYB MIKRO: Mierzymy odległość tylko do JEDNEGO konkretnego adresu MAC
-                if (macAddress == currentTarget!!.associatedMac) {
-                    announceDistanceProgress(distanceOrRssi)
+                if (device.macAddress == currentTarget!!.associatedMac) {
+                    announceDistanceProgress(device,distanceOrRssi)
                 }
             }
         }
 
         // 3. LOGIKA MIJANIA INNYCH OBIEKTÓW PO DRODZE (Eksploracja tła)
         if (distanceOrRssi <= PASSING_THRESHOLD_METERS) {
-            val currentTime = System.currentTimeMillis()
 
             // Upewniamy się, że nie mówimy "Mijasz biurko", jeśli biurko jest naszym głównym celem
-            val isMyMainTarget = (currentTarget != null && !currentTarget!!.isMacroTarget && macAddress == currentTarget!!.associatedMac)
+            val isMyMainTarget = (currentTarget != null && !currentTarget!!.isMacroTarget && device.macAddress == currentTarget!!.associatedMac)
 
             if (!isMyMainTarget) {
                 // Wywołujemy Twoją odświeżoną funkcję!
@@ -139,37 +138,77 @@ class NavigationRoutingEngine(
             speechService.announceBackground("Mijasz: ${detectedDevice.semanticRole}")
         }
     }
-    private fun announceDistanceProgress(distance: Double) {
+    private fun announceDistanceProgress(device: IoTDevice,distance: Double) {
         val distanceInt = distance.roundToInt()
         val dest = currentTarget ?: return // Używamy nowej zmiennej currentTarget!
 
-        // Scenariusz: Finisz (1.0m)
-        if (distance <= 1.0 && !reachAnnounced10) {
-            speechService.announceImportant("Jesteś przed ${dest.name}")
-            reachAnnounced10 = true
-            return
-        }
+        if (device.deviceType == "UWB_ANCHOR") {
+            // =======================================================
+            // ŚCIEŻKA UWB: Dokładne odliczanie ("Autostrada")
+            // =====
+            // Scenariusz: Finisz (1.0m)
+            if (distance <= 1.0 && !reachAnnounced10) {
+                speechService.announceImportant("Jesteś przed ${dest.name}")
+                reachAnnounced10 = true
+                return
+            }
 
-        // Scenariusz: Finisz (1.5m)
-        if (distance <= 1.5 && !reachAnnounced15) {
-            speechService.announceImportant("Dotarłeś do celu. Jesteś przed ${dest.name}")
-            reachAnnounced15 = true
-            return
-        }
+            // Scenariusz: Finisz (1.5m)
+            if (distance <= 1.5 && !reachAnnounced15) {
+                speechService.announceImportant("Dotarłeś do celu. Jesteś przed ${dest.name}")
+                reachAnnounced15 = true
+                return
+            }
 
-        // Scenariusz: Zbliżanie się
-        if (distance > 1.5) {
-            if (distanceInt <= 10) {
-                if (distanceInt != lastAnnouncedDistanceInt) {
-                    speechService.announceBackground("$distanceInt ${getMeterSpelling(distanceInt)}")
-                    lastAnnouncedDistanceInt = distanceInt
+            // Scenariusz: Zbliżanie się// czyli to zostawiamy bez podzialu na device type?
+            if (distance > 1.5) {
+                if (distanceInt <= 10) {
+                    if (distanceInt != lastAnnouncedDistanceInt) {
+                        speechService.announceBackground(
+                            "$distanceInt ${
+                                getMeterSpelling(
+                                    distanceInt
+                                )
+                            }"
+                        )
+                        lastAnnouncedDistanceInt = distanceInt
+                    }
+                } else {
+                    val roundedTo5 = (distanceInt / 5) * 5
+                    if (roundedTo5 != lastAnnouncedDistanceInt && distanceInt % 5 == 0) {
+                        speechService.announceBackground(
+                            "$distanceInt ${
+                                getMeterSpelling(
+                                    distanceInt
+                                )
+                            }"
+                        )
+                        lastAnnouncedDistanceInt = roundedTo5
+                    }
                 }
-            } else {
-                val roundedTo5 = (distanceInt / 5) * 5
-                if (roundedTo5 != lastAnnouncedDistanceInt && distanceInt % 5 == 0) {
-                    speechService.announceBackground("$distanceInt ${getMeterSpelling(distanceInt)}")
-                    lastAnnouncedDistanceInt = roundedTo5
-                }
+            }
+        }
+        else if (device.deviceType == "BLE_BEACON") {
+            // =======================================================
+            // ŚCIEŻKA BLE: Logika rozmyta (Brak odliczania metrów!)
+            // =======================================================
+
+            // Zamiast czytać przeskakujące metry, odpalamy komunikaty
+            // tylko po przekroczeniu "magicznych barier" bliskości.
+
+            // Bariera 1: Cel osiągnięty (Bardzo mocny sygnał BLE)
+            if (distance <= 1.5 && !reachAnnounced15) {
+                speechService.announceImportant("Cel odnaleziony. Jesteś przy: ${dest.name}")
+                reachAnnounced15 = true
+                reachAnnounced10 = true // Blokujemy dalsze komunikaty
+                return
+            }
+
+            // Bariera 2: Strefa pobliża (Zaczynamy łapać sygnał BLE)
+            // Wymaga dodania małej flagi 'nearAnnounced' (lub użycia reachAnnounced10 w nowym celu)
+            if (distance > 1.5 && distance <= 4.0 && !reachAnnounced10) {
+                speechService.announceImportant("Zbliżasz się do: ${dest.name}")
+                reachAnnounced10 = true // Flaga chroni przed powtarzaniem w kółko
             }
         }
     }
