@@ -52,7 +52,7 @@ class MainActivity : ComponentActivity() {
         speechService = AccessibilitySpeechService(this)
         routingEngine = NavigationRoutingEngine(topologyDatabase, speechService)
 
-        // Inicjalizacja MQTT (usunięto context, bo MqttAsyncClient go nie potrzebuje)
+
         bleManager = BleConnectionManager(routingEngine) { nowaWiadomosc ->
             // Upewniamy się, że modyfikujemy interfejs w głównym wątku
             runOnUiThread {
@@ -274,7 +274,7 @@ fun NavigationScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         // ==========================================================
         // 6. LISTA MIKRO (Przekazanie zmiennej 'microTargets' do UI)
@@ -287,7 +287,7 @@ fun NavigationScreen(
             items(microTargets) { target -> // <--- TUTAJ UŻYWAMY LISTY MIKRO
                 Button(
                     onClick = { onStartNavigation(target) },
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)
                 ) {
                     Text(target.name)
