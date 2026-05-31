@@ -13,7 +13,7 @@ class NavigationRoutingEngine(
 ) {
 
     // 1. STANY SILNIKA NAWIGACJI
-    var currentLocationId: Int? = null // Gdzie aktualnie jestem? (do Cold Startu)
+
     private var currentTarget: NavigationTarget? = null // Dokąd idę?
 
     private var lastPassAnnouncementTimeMs: Long = 0
@@ -24,6 +24,13 @@ class NavigationRoutingEngine(
     private var reachAnnounced15 = false
     private var lastAnnouncedDistanceInt = -1
 
+    //--zmienne stanu (przsylanie listy urzadzen do espa) --
+    var currentLocationId: Int? = null // Gdzie aktualnie jestem? (do Cold Startu)
+    private var lastTransitionTime: Long = 0  // Kiedy ostatnio zmieniliśmy strefę?
+
+    // Ustawienia systemu
+    private val COOLDOWN_MS = 4000L // 4 sekundy blokady po zmianie strefy (żeby wyjść z progu)
+    private val TRIGGER_THRESHOLD = 2 // Zmiana strefy następuje dopiero, gdy podejdziemy bliżej niż na 2 metry
     // =========================================================================
     // AKCJE UŻYTKOWNIKA (Wywoływane z MainActivity po kliknięciu przycisku)
     // =========================================================================
@@ -42,39 +49,48 @@ class NavigationRoutingEngine(
         }
     }
 
-
-
-
-
-
     // =========================================================================
     // AKCJE Z BLUETOOTHA (Wywoływane przez BleConnectionManager setki razy)
     // =========================================================================
-    fun processScannedDevice(macAddress: String, rssi: Double): List<IoTDevice>? {
+    fun processScannedDevice(macAddress: String, distance: Double): List<IoTDevice>? {
 
-        // 1. Szukamy, czy to urządzenie z Cache'u? ( w senie czy nie zlapalismy silnego sygnalu (przy cold start) z np kogos sluchawek BT
-        val knownDevice = buildingTopologyDB.cachedDevices.find { it.macAddress == macAddress } ?: return null
+        // 1. Szukamy, czy to urządzenie z Cache'u? ( w senie czy nie zlapalismy silnego sygnalu (przy cold start) z np kogos sluchawek BT -> zwraca null
+        val scannedDev = buildingTopologyDB.cachedDevices.find { it.macAddress == macAddress } ?: return null
+
 
         // UWAGA: Sprawdzamy, czy urządzenie, które usłyszeliśmy, wymusza zmianę lokalizacji
         // Dzieje się tak podczas ZIMNEGO STARTU (currentLocationId == null)
         // LUB gdy złapaliśmy Trigger w windzie
-        if (currentLocationId != knownDevice.locationId) {
-
-            // Ignorujemy "zwykłe" urządzenia z innych pięter, reagujemy tylko na Triggery
-            // (Chyba, że to ZIMNY START - wtedy bierzemy wszystko jak leci, żeby w ogóle zacząć)
-            val isColdStart = (currentLocationId == null)
-            val isTrigger = buildingTopologyDB.getBoundaryTriggers().any { it.macAddress == macAddress }
+        if (currentLocationId != scannedDev.locationId) {
+            // 3. HISTEREZA: Czy przekroczyliśmy fizyczny próg nowej strefy?
+            val currentTime = System.currentTimeMillis()
 
 
-            if (isColdStart || isTrigger && rssi > -60.00) {
-                currentLocationId = knownDevice.locationId
+            if(currentLocationId == null){
+                // Zwracamy listę nowych urządzeń OD RAZU (pierwsze uruchomienie)
+                currentLocationId = scannedDev.locationId
                 println("🔥 ZMIANA LOKALIZACJI NA: $currentLocationId")
-
-                // Zwracamy listę nowych urządzeń dla tej lokalizacji do wysłania!
+                //zapis czasu na kolejne pomiary
+                lastTransitionTime = currentTime
                 return buildingTopologyDB.getDevicesForLocation(currentLocationId!!)
             }
-        }
 
+            if (distance > TRIGGER_THRESHOLD) {
+                return null // Widzimy nową strefę z daleka, ale jeszcze do niej nie weszliśmy.
+            }
+
+            // COOLDOWN: Ochrona przed szamotaniem (Ping-Pongiem) w drzwiach
+
+            if (currentTime - lastTransitionTime < COOLDOWN_MS) {
+                return null // Jesteśmy w trakcie "zamrożenia" po poprzedniej zmianie.
+            }
+            //ZMIENIAMY STREFĘ NA NOWĄ
+
+            lastTransitionTime = currentTime
+            currentLocationId = scannedDev.locationId
+            return buildingTopologyDB.getDevicesForLocation(currentLocationId!!)
+
+        }
 
         return null
     }
@@ -84,10 +100,10 @@ class NavigationRoutingEngine(
 
     //- obsluga ID z kotwicy (rzutowanie na opwiedni format z DB?)
     // =========================================================================
-    fun processNewTelemetryData(device: IoTDevice, distanceOrRssi: Double) {
+    fun processNewTelemetryData(macAddress : String,distanceOrRssi: Double) {
 
         // 1. Zidentyfikuj, co usłyszało ESP32
-        val detectedDevice = buildingTopologyDB.getDeviceByMac(device.macAddress) ?: return
+        val detectedDevice = buildingTopologyDB.getDeviceByMac(macAddress) ?: return
 
         // 2. LOGIKA DOTARCIA DO CELU (Czy jestem blisko tego, co zaklikałem w UI?)
         if (currentTarget != null) {
@@ -103,8 +119,8 @@ class NavigationRoutingEngine(
                 }
             } else {
                 // TRYB MIKRO: Mierzymy odległość tylko do JEDNEGO konkretnego adresu MAC
-                if (device.macAddress == currentTarget!!.associatedMac) {
-                    announceDistanceProgress(device,distanceOrRssi)
+                if (macAddress == currentTarget!!.associatedMac) {
+                    announceDistanceProgress(detectedDevice,distanceOrRssi)
                 }
             }
         }
@@ -113,7 +129,7 @@ class NavigationRoutingEngine(
         if (distanceOrRssi <= PASSING_THRESHOLD_METERS) {
 
             // Upewniamy się, że nie mówimy "Mijasz biurko", jeśli biurko jest naszym głównym celem
-            val isMyMainTarget = (currentTarget != null && !currentTarget!!.isMacroTarget && device.macAddress == currentTarget!!.associatedMac)
+            val isMyMainTarget = (currentTarget != null && !currentTarget!!.isMacroTarget && macAddress == currentTarget!!.associatedMac)
 
             if (!isMyMainTarget) {
                 // Wywołujemy Twoją odświeżoną funkcję!
