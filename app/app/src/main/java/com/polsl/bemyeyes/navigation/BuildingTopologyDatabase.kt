@@ -29,13 +29,6 @@ class BuildingTopologyDatabase {
     //  zastępuje Twoje stare 'getNodeById'
     fun getDeviceByMac(mac: String) = cachedDevices.find { it.macAddress == mac }
 
-
-
-    // Szybka funkcja do wyciągania triggerów (żeby łatwo sprawdzać, czy jesteśmy przy schodach)
-    fun getBoundaryTriggers(): List<IoTDevice> {
-        return cachedDevices.filter { it.semanticRole.contains("TRIGGER") }
-    }
-
     // Funkcja do pobierania urządzeń na konkretne piętro
     fun getDevicesForLocation(locationId: Int): List<IoTDevice> {
         return cachedDevices.filter { it.locationId == locationId }
