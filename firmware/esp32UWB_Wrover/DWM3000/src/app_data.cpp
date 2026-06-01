@@ -172,9 +172,19 @@ void AppDataManager::printCurrentState() {
 
  void AppDataManager::addBleTarget(const std::string& mac) {
         std::lock_guard<std::mutex> lock(dataMutex);
-        if (!isTargetBleDevice(mac)) {
-            target_ble_devices.push_back({mac, -1.0f});
+       // Zamiast wołać zablokowane isTargetBleDevice(), robimy szybkie sprawdzenie ręcznie
+    bool alreadyExists = false;
+    for (const auto& device : target_ble_devices) {
+        if (device.mac == mac) {
+            alreadyExists = true;
+            break;
         }
+    }
+
+    // Jeśli go nie ma, dodajemy do listy startowej
+    if (!alreadyExists) {
+        target_ble_devices.push_back({mac, -1.0f});
+    }
 }
 
 uint8_t AppDataManager::getUwbAnchorId(int index) {
