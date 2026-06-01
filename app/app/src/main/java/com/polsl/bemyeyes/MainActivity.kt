@@ -12,6 +12,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 
 import androidx.compose.runtime.*
@@ -92,13 +94,12 @@ class MainActivity : ComponentActivity() {
 
                         modifier = Modifier.padding(innerPadding),
                         logs = debugLogs,
-                        currentLocationId = currentLocation, // PRZEKAZUJEMY STAN
-                        topologyDb = topologyDatabase,
                         appToEspLogs = appToEspLogs,
                         currentTargetName = currentTargetNameState.value,
                         // PRZEKAZUJEMY GOTOWE, ŻYWE LISTY DO UI:
                         macroTargets = macroList,
                         microTargets = microList,
+                        currentLocation = currentLocation,
 
 
                         onStartNavigation = { target ->
@@ -193,21 +194,25 @@ fun NavigationScreen(
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onTestApiClick: () -> Unit, // <--- NOWY PARAMETR (Callback)
-    currentLocationId: Int?, // Musisz przekazać to z MainActivity/RoutingEngine
-    topologyDb: BuildingTopologyDatabase,
     appToEspLogs: List<String>, // NOWA KONSOLA WYCHODZĄCA
     macroTargets: List<NavigationTarget>,
     microTargets: List<NavigationTarget>,
     currentTargetName: String,
+    currentLocation: Int? = null
 
 
 ) {
 
+    val scrollState = rememberScrollState()
 
     Column(
-        modifier = modifier.fillMaxSize().padding(16.dp),
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .verticalScroll(scrollState), // <--- TO DAJE SCROLL CAŁEGO EKRANU
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+
         // --- GÓRNY PASEK STEROWANIA BLE ---
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -268,10 +273,11 @@ fun NavigationScreen(
         //obie nie dzialaja nic sie nie zmienia nie da sie kliknac- zwykly tekst
         // ==========================================================
         // 5. LISTA MAKRO (Przekazanie zmiennej 'macroTargets' do UI)
-        // ==========================================================
         Text("📍 MAKRONAWIGACJA (Stałe)", style = MaterialTheme.typography.titleMedium)
-        LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
-            items(macroTargets) { target -> // <--- TUTAJ UŻYWAMY LISTY MAKRO
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Column(modifier = Modifier.fillMaxWidth()) {
+            macroTargets.forEach { target -> // <--- Pętla forEach zamiast items()
                 Button(
                     onClick = { onStartNavigation(target) },
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -287,25 +293,27 @@ fun NavigationScreen(
         // ==========================================================
         // 6. LISTA MIKRO (Przekazanie zmiennej 'microTargets' do UI)
         // ==========================================================
-        Text("🎯 MIKRONAWIGACJA (W zasięgu)", style = MaterialTheme.typography.titleMedium)
+        Text("🎯 MIKRONAWIGACJA (Strefa: ${currentLocation ?: "Nieznana"})", style = MaterialTheme.typography.titleMedium)
         if (microTargets.isEmpty()) {
             Text("Brak precyzyjnych celów. Zbliż się do pokoju...", color = Color.Gray)
-        }
-        LazyColumn(modifier =  Modifier.heightIn(max = 200.dp)) {
-            items(microTargets) { target -> // <--- TUTAJ UŻYWAMY LISTY MIKRO
-                Button(
-                    onClick = { onStartNavigation(target) },
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)
-                ) {
-                    Text(target.name)
+
+        } else {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                microTargets.forEach { target -> // <--- Pętla forEach zamiast items()
+                    Button(
+                        onClick = { onStartNavigation(target) },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)
+                    ) {
+                        Text(target.name)
+                    }
                 }
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
 
 
-        // 🔥 [3] NOWA KONSOLA: APP -> ESP / DATABASE 🔥
+        //  KONSOLA: APP -> ESP / DATABASE 🔥
         Card(
             modifier = Modifier.fillMaxWidth().height(200.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
@@ -328,7 +336,7 @@ fun NavigationScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f) // Zajmuje resztę ekranu
+                .height(250.dp) // Zajmuje resztę ekranu
                 .background(Color.Black)
                 .padding(8.dp)
         ) {
