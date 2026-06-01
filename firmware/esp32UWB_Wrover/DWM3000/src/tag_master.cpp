@@ -10,8 +10,10 @@
 #define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 #define FILTER_CHARACTERISTIC_UUID "c0de0001-feed-4688-b7f5-ea07361b26a8"
 
-const std::string MOCK_TAG_1_MAC = "ff:ff:12:b1:64:d1"; // desk 
+const std::string MOCK_TAG_1_MAC = "ff:ff:12:b1:64:d1"; // desk black tag 1 (trigger)
 const std::string MOCK_TAG_2_MAC = "a8:03:2a:b8:ee:fa"; // coffe 
+const std::string MOCK_TAG_3_MAC = "ff:ff:12:8d:7c:df"; // blue tag 
+const std::string MOCK_TAG_4_MAC = "ff:ff:12:a2:43:90"; // black tag 2
 
 
 
@@ -78,7 +80,7 @@ class MyAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
         // ---------------------------------------------------------
         // TRYB 2: COLD START (Lista jest pusta, szukamy gdzie jesteśmy)
         // ---------------------------------------------------------
-        if (currentRssi > -60) {
+        if (currentRssi > -75) {
             
             bool isOurTag = false; // Flaga, która określi, czy wpuszczamy to urządzenie
 
@@ -140,11 +142,11 @@ void TaskNotify(void *pvParameters) {
                 // TUTAJ ZBIERAMY DANE: UWB_dist jest na bieżąco aktualizowane przez DW3000 w pętli loop()!
 
                 // Wysyłamy do telefonu TYLKO jeśli zebraliśmy jakiś pomiar > 0
-                 String uwb_data = appData.getAggregatedData();
-                if (uwb_data.length() > 0) {
-                    pCharacteristic->setValue((uint8_t*)uwb_data.c_str(), uwb_data.length());
+                 String payload = appData.getAggregatedData();
+                if (payload.length() > 0) {
+                    pCharacteristic->setValue((uint8_t*)payload.c_str(), payload.length());
                     pCharacteristic->notify();
-                    Serial.println("[NOTIFY] Wysyłam dane do telefonu: " + uwb_data);
+                    Serial.println("[NOTIFY] Wysyłam dane do telefonu: " + payload);
                 }
              
             }
