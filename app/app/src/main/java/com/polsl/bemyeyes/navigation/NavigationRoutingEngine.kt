@@ -42,6 +42,7 @@ class NavigationRoutingEngine(
         reachAnnounced10 = false
         reachAnnounced15 = false
         lastAnnouncedDistanceInt = -1
+        currentTarget = target
 
         if (target.isMacroTarget) {
             speechService.announceImportant("Rozpoczynam nawigację do strefy: ${target.name}.")
