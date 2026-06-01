@@ -274,7 +274,7 @@ fun NavigationScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(2.dp))
 
         // ==========================================================
         // 6. LISTA MIKRO (Przekazanie zmiennej 'microTargets' do UI)
@@ -283,7 +283,7 @@ fun NavigationScreen(
         if (microTargets.isEmpty()) {
             Text("Brak precyzyjnych celów. Zbliż się do pokoju...", color = Color.Gray)
         }
-        LazyColumn(modifier = Modifier.weight(1f)) {
+        LazyColumn(modifier =  Modifier.heightIn(max = 200.dp)) {
             items(microTargets) { target -> // <--- TUTAJ UŻYWAMY LISTY MIKRO
                 Button(
                     onClick = { onStartNavigation(target) },
@@ -294,12 +294,12 @@ fun NavigationScreen(
                 }
             }
         }
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
 
         // 🔥 [3] NOWA KONSOLA: APP -> ESP / DATABASE 🔥
         Card(
-            modifier = Modifier.fillMaxWidth().height(100.dp),
+            modifier = Modifier.fillMaxWidth().height(200.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
         ) {
             Column(modifier = Modifier.padding(8.dp)) {
@@ -312,7 +312,7 @@ fun NavigationScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
 
         // KONSOLA DEBUG (odpowiednik nRF Connect)
