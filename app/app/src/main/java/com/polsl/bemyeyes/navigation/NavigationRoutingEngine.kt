@@ -9,7 +9,8 @@ import kotlin.math.roundToInt
  */
 class NavigationRoutingEngine(
     private val buildingTopologyDB: BuildingTopologyDatabase,
-    private val speechService: AccessibilitySpeechService // Upewnij się, że ta klasa istnieje
+    private val speechService: AccessibilitySpeechService, // Upewnij się, że ta klasa istnieje
+    private val onLocationChanged: ((Int) -> Unit)? = null //callback o zmienie locationID
 ) {
 
     // 1. STANY SILNIKA NAWIGACJI
@@ -88,6 +89,8 @@ class NavigationRoutingEngine(
 
             lastTransitionTime = currentTime
             currentLocationId = scannedDev.locationId
+            // 🔥 KRZYCZYMY DO MAIN ACTIVITY:
+            onLocationChanged?.invoke(currentLocationId!!)
             return buildingTopologyDB.getDevicesForLocation(currentLocationId!!)
 
         }
