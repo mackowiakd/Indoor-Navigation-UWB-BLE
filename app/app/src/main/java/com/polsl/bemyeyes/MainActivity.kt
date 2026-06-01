@@ -50,12 +50,17 @@ class MainActivity : ComponentActivity() {
         //@TODO evoke fun to downloead data from DB into local cache (like singleton RAM file?)
         topologyDatabase = BuildingTopologyDatabase()
         speechService = AccessibilitySpeechService(this)
-        routingEngine = NavigationRoutingEngine(topologyDatabase, speechService)
-
+        // 1. INICJALIZACJA SILNIKA I JEGO CALLBACK (Zamknięty klamrą!)
+        routingEngine = NavigationRoutingEngine(topologyDatabase, speechService) { locationId ->
+            runOnUiThread {
+                currentLocationIdState.value = locationId
+            }
+        }
 
         bleManager = BleConnectionManager(routingEngine) { nowaWiadomosc ->
             // Upewniamy się, że modyfikujemy interfejs w głównym wątku
             runOnUiThread {
+
                 // WYCHWYTYWANIE FILTRU: Jeśli log zawiera te słowa, wyciągamy samą listę (payload)
                 if (nowaWiadomosc.contains("Wysłano")) {
                     appToEspLogs.add(0, nowaWiadomosc)
@@ -148,7 +153,10 @@ class MainActivity : ComponentActivity() {
                 "📍 Cele Makro (${allTargets.count { it.isMacroTarget }}): " + allTargets.filter { it.isMacroTarget }
                     .joinToString(", ") { it.name })
             appToEspLogs.add(0, "📊 ---------------------------")
+            // NOWE: Logowanie Mikro
+            appToEspLogs.add(0, "🎯 Cele Mikro (${allTargets.count { !it.isMacroTarget }}): " + allTargets.filter { !it.isMacroTarget }.joinToString(", ") { it.name })
 
+            appToEspLogs.add(0, "📊 ---------------------------")
         } catch (e: Exception) {
             appToEspLogs.add(0, "❌ BŁĄD API: ${e.message}")
 
