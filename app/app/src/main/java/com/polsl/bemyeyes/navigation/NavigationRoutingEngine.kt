@@ -97,6 +97,10 @@ class NavigationRoutingEngine(
                 println("🔥 ZMIANA LOKALIZACJI NA: $currentLocationId")
                 //zapis czasu na kolejne pomiary
                 lastTransitionTime = currentTime
+                // ========================================================
+                //  BRAKUJĄCY CALLBACK DLA COLD STARTU!
+                // ========================================================
+                onLocationChanged?.invoke(currentLocationId!!)
                 return buildingTopologyDB.getDevicesForLocation(currentLocationId!!)
             }
 
