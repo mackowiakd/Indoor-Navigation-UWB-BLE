@@ -3,6 +3,7 @@ package com.polsl.bemyeyes.navigation
 import com.polsl.bemyeyes.navigation.dataBase.IoTDevice
 import com.polsl.bemyeyes.navigation.dataBase.NavigationTarget
 import kotlin.math.roundToInt
+import kotlinx.coroutines.*
 
 /**
  * Silnik analizujący stany przejść grafu budynku oraz dystrybuujący komendy głosowe.
@@ -32,6 +33,9 @@ class NavigationRoutingEngine(
     // Ustawienia systemu
     private val COOLDOWN_MS = 4000L // 4 sekundy blokady po zmianie strefy (żeby wyjść z progu)
     private val TRIGGER_THRESHOLD = 2 // Zmiana strefy następuje dopiero, gdy podejdziemy bliżej niż na 2 metry
+    // --- ZMIENNE WATCHDOGA ---
+    private var watchdogJob: Job? = null
+    private var lastTargetSignalTime: Long = 0L
     // =========================================================================
     // AKCJE UŻYTKOWNIKA (Wywoływane z MainActivity po kliknięciu przycisku)
     // =========================================================================
@@ -43,14 +47,33 @@ class NavigationRoutingEngine(
         reachAnnounced15 = false
         lastAnnouncedDistanceInt = -1
         currentTarget = target
+        lastTargetSignalTime = System.currentTimeMillis() // Resetujemy czas!
 
         if (target.isMacroTarget) {
             speechService.announceImportant("Rozpoczynam nawigację do strefy: ${target.name}.")
         } else {
             speechService.announceImportant("Szukam precyzyjnie: ${target.name}.")
         }
+        startSignalWatchdog()
     }
 
+    private fun startSignalWatchdog() {
+        watchdogJob?.cancel() // Ubijamy starego watchdoga (jeśli użytkownik szybko kliknął inny cel)
+
+        watchdogJob = CoroutineScope(Dispatchers.Main).launch {
+            // Pętla kręci się tak długo, jak mamy cel i do niego nie dotarliśmy
+            while (currentTarget != null && !reachAnnounced15) {
+                delay(8000) // Usypiamy w tle na 8 sekund
+
+                val timeSinceLastSignal = System.currentTimeMillis() - lastTargetSignalTime
+
+                // Jeśli minęło więcej niż 8 sekund bez żadnego piku z BLE/UWB
+                if (timeSinceLastSignal >= 8000) {
+                    speechService.announceBackground("Sygnał słaby lub poza zasięgiem. Zrób kilka kroków.")
+                }
+            }
+        }
+    }
     // =========================================================================
     // AKCJE Z BLUETOOTHA (Wywoływane przez BleConnectionManager setki razy)
     // =========================================================================
@@ -161,6 +184,8 @@ class NavigationRoutingEngine(
     private fun announceDistanceProgress(device: IoTDevice,distance: Double) {
         val distanceInt = distance.roundToInt()
         val dest = currentTarget ?: return // Używamy nowej zmiennej currentTarget!
+
+        lastTargetSignalTime = System.currentTimeMillis() // tzn ze dostalismy syganl z targetu
 
         if (device.deviceType == "UWB_ANCHOR") {
             // =======================================================
