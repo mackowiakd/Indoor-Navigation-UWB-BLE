@@ -137,7 +137,19 @@ class BleConnectionManager(
                 if (record.startsWith("U_")) {
                     // record to np. "U_1=2.45" lub "U_11=2.45"
                     // substringBefore("=") da nam "U_1", a substringAfter("U_") wyciągnie czyste ID: "1" lub "11"
-                    id = record.substringBefore("=").substringAfter("U_").trim()
+                    // 1. Wyciągamy surowe ID z tekstu od ESP32 (np. "1", "10", "15")
+                    val rawId = record.substringBefore("=").substringAfter("U_").trim()
+
+                    // 2. Próbujemy rzutować na liczbę
+                    val numericId = rawId.toIntOrNull()
+
+                    // 3. DOPEŁNIANIE ZERAMI DO STRUKTURY HEX (0x0000)
+                    id = if (numericId != null) {
+                        // %04x oznacza: formatuj jako hex (x), małe litery, szerokość 4 znaki, dopełnij zerami (0)
+                        String.format("0x%04x", numericId)
+                    } else {
+                        rawId // Na wypadek gdyby ESP32 wysłało już gotowy format, zostawiamy bez zmian
+                    }
                     dist = record.substringAfter("=").toDoubleOrNull()
 
                 } else if (record.startsWith("B_")) {
