@@ -7,14 +7,24 @@
 
 An indoor wayfinding and navigation system designed to assist visually impaired individuals. The system relies on a hardware module attached to the user (e.g., a white cane or backpack) that scans the environment and communicates with a smartphone app to provide real-time audio guidance.
 
-## 🌟 Core Concept
+## 🧭 Core Concept & Navigation Paradigm
 
-The system solves the problem of indoor positioning using a two-tier approach:
-1. **Macro-Navigation (UWB):** The ESP32 utilizes an Ultra-Wideband (DW3000) module to perform Two-Way Ranging (TWR) with pre-installed anchors. This provides precise (cm-level) distance measurements for standard trilateration.
-2. **Micro-Navigation (BLE):** To identify specific Points of Interest (POIs) like doors, classrooms, or fire extinguishers without expensive UWB anchors, the ESP32 acts as a BLE Scanner. It detects nearby low-cost BLE Beacons and estimates proximity based on RSSI (Received Signal Strength Indicator).
-3. **Boundary Triggers (Context Switching):** BLE Beacons are also used as "Transition Zone Triggers" (e.g., in elevators or staircases). They solve the **Cold Start Problem** by waking up the system and telling the mobile app to load a new architectural context (e.g., switching from Floor 1 to Floor 2 anchors).
-4. **Data Relay:** The ESP32 acts strictly as a "Dumb Sensor Hub". It bundles raw UWB distances and BLE RSSI readings and pushes them via a BLE GATT Server directly to the user's smartphone. The smartphone handles all heavy mathematical calculations and logic.
+Unlike traditional GPS-like positioning systems that continuously compute absolute 2D/3D coordinates (XYZ), this project implements a **Topological (Nodal) Navigation System** driven by a **Proximity-Based ("Hot/Cold") Guidance Paradigm**. 
 
+The system maps the environment as a graph of interconnected semantic points (zones and assets), focusing on linear distance vectors and landmark exploration rather than geometric grid-tracking.
+
+The system processes spatial data through a two-tier approach:
+1. **Macro-Navigation (UWB Homing):** The ESP32 utilizes an Ultra-Wideband (DW3000) module to perform Two-Way Ranging (TWR) with static anchors. Instead of running heavy geometric equations on the edge, the app analyzes the 1D distance vector to the selected anchor, acting as a high-precision spatial radar ("Hot/Cold") that guides the user along corridors or open spaces.
+2. **Micro-Navigation (BLE Proximity):** To identify specific Points of Interest (POIs) like desks, coffee machines, or windows without expensive infrastructure, the ESP32 acts as a BLE Scanner. It detects nearby low-cost BLE Beacons and estimates immediate proximity based on heavily filtered RSSI (Received Signal Strength Indicator) thresholds.
+3. **Boundary Triggers (Context Switching):** BLE Beacons also serve as "Topological Transition Triggers" (e.g., placed at doors or zone boundaries). They solve the **Cold Start Problem** by waking up the application and forcing the mobile app to load a new architectural context (e.g., switching the active asset checklist from Floor 1 to the UWB Laboratory zone).
+4. **Data Relay:** The ESP32 acts strictly as a "Dumb Sensor Hub". It bundles raw UWB distances and BLE RSSI readings and pushes them via a BLE GATT Server directly to the user's smartphone. The smartphone acts as the "Smart Brain", handling all state transitions, background asset alerts, and text-to-speech output.
+
+## 📐 Engineering Scope & Architectural Limits
+
+To maintain a strict and deliverable engineering focus for this thesis, a clear line was drawn between **Topological Awareness** and **Absolute Coordinate Positioning**:
+* **In Scope (Implemented):** 1D distance tracking, multi-zone context switching, asynchronous passing/landmark announcements ("You are passing: Window"), proximity-based finish alerts, and dynamic BLE hardware white-list filtering.
+* **Out of Scope (Future Work):** Multilateration/Trilateration algorithms, absolute XY coordinate mapping, and compass-driven angular vector calculations. The system is intentionally designed as a robust **hardware-and-software communication framework** that can easily ingest coordinate-calculation layers in future iterations (e.g., a Master's thesis expansion).
+* 
 ## 🌟 System Architecture
 
 The project is built strictly on the **"Dumb Sensor, Smart Brain"** architectural paradigm, ensuring high scalability and low edge-device power consumption. It operates across three main tiers:
