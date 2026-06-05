@@ -11,10 +11,12 @@
 struct BleDeviceData {
     std::string mac;
     float distance;
+    //uint32_t last_seen_ms = 0; // Timestamp ostatniego widzenia, do usuwania duchow wylaczonych tagow
 };
 struct UwbDeviceData {
     uint8_t id;
     float distance;
+    //uint32_t last_seen_ms = 0; // Timestamp ostatniego widzenia, do usuwania duchow wylaczonych kotwic
 };
 
 class AppDataManager {
