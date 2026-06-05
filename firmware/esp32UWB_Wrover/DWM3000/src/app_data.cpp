@@ -95,6 +95,7 @@ void AppDataManager::updateBleDistance(const std::string& mac, float newDist, fl
     std::lock_guard<std::mutex> lock(dataMutex);
     for (auto& device : target_ble_devices) {
         if (device.mac == mac) {
+            //device.last_seen_ms = millis();
             if (device.distance < 0) {
                 device.distance = newDist; // Pierwszy strzał pomiaru
             } else {
@@ -111,6 +112,7 @@ void AppDataManager::updateUwbDistance(uint8_t anchorId, float newDist) {
     for (auto& anchor : active_uwb_anchors) {
         if (anchor.id == anchorId) {
             anchor.distance = newDist;
+            //anchor.last_seen_ms = millis(); // <--- ZNACZNIK ŻYCIA KOTWICY
             return;
         }
     }
@@ -120,9 +122,13 @@ void AppDataManager::updateUwbDistance(uint8_t anchorId, float newDist) {
 String AppDataManager::getAggregatedData() {
     String payload = "";
     std::lock_guard<std::mutex> lock(dataMutex);
+    uint32_t current_time = millis(); // Pobieramy czas w tym ułamku sekundy
+    const uint32_t TIMEOUT_MS = 2500; // 2.5 sekundy bez sygnału to śmierć taga
+
     // 1. Sklejamy odległości Kotwic UWB (np. U_1=2.45;U_2=5.10;)
     for (const auto& anchor : active_uwb_anchors) {
-        if (anchor.distance > 0) {
+        if (anchor.distance > 0)  //&& (current_time - anchor.last_seen_ms > TIMEOUT_MS))
+        {
             char hexBuf[10];
             // snprintf JEST BEZPIECZNE - sizeof(hexBuf) fizycznie blokuje wyciek pamięci!
             snprintf(hexBuf, sizeof(hexBuf), "0x%04X", anchor.id);
@@ -134,7 +140,8 @@ String AppDataManager::getAggregatedData() {
     }
     
     for (const auto& device : target_ble_devices) {
-        if (device.distance > 0) {
+        if (device.distance > 0) //&& (current_time - device.last_seen_ms > TIMEOUT_MS))
+        {
             // Wysyłamy PEŁNY MAC. Używamy znaku '=' żeby oddzielić MAC od dystansu!
             // Format docelowy: UWB:2.45;BLE_ff:ff:12:b1:64:d1=1.50
             payload += "B_" + String(device.mac.c_str()) + "=" + String(device.distance, 2)+ ";";
