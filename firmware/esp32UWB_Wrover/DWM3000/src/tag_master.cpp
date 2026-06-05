@@ -64,17 +64,17 @@ class MyAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
         std::string deviceMac = advertisedDevice->getAddress().toString();
         int currentRssi = advertisedDevice->getRSSI();
 
-       // ---------------------------------------------------------
-        // TRYB 1: NAWIGACJA (Mamy już listę od aplikacji z telefonu)
-        // ---------------------------------------------------------
-        if (appData.hasBleTargets()) { 
+      // =================================================================
+        // ETAP 1: AKTUALIZACJA ZNANYCH CELÓW (Z listą od apki lub zwiadowcą)
+        // =================================================================
+        if (appData.isTargetBleDevice(deviceMac)) {
             // hasBleTargets() to funkcja ktr zwraca true jeśli vector nie jest pusty
             
             if (appData.isTargetBleDevice(deviceMac)) {
               
                 appData.updateBleDistance(deviceMac, calculateDistance(currentRssi), EMA_ALPHA);
             }
-            return; // Kończymy, nie interesują nas inne urządzenia!
+            return; // Kończymy, nie interesują nas inne urządzenia! NIE KONCZYMY => LOGIKA TRIGGEROWANIA NIGDY NIE ZADZIALA
         }
 
         // ---------------------------------------------------------
