@@ -11,12 +11,13 @@
 struct BleDeviceData {
     std::string mac;
     float distance;
-    //uint32_t last_seen_ms = 0; // Timestamp ostatniego widzenia, do usuwania duchow wylaczonych tagow
+    unsigned long last_seen_ms; // Timestamp ostatniego widzenia, do usuwania duchow wylaczonych tagow
 };
 struct UwbDeviceData {
     uint8_t id;
     float distance;
-    //uint32_t last_seen_ms = 0; // Timestamp ostatniego widzenia, do usuwania duchow wylaczonych kotwic
+    unsigned long last_seen_ms; // Timestamp ostatniego widzenia, do usuwania duchow wylaczonych kotwic
+    uint8_t failed_attempts;
 };
 
 class AppDataManager {
@@ -40,7 +41,7 @@ public:
     bool parseBlePayload(String payload);
 
     
-    // 3. FUNKCJE DLA BLE
+    // 3. FUNKCJE dla espa
     bool isTargetBleDevice(const std::string& mac);
     void updateBleDistance(const std::string& mac, float newDist, float emaAlpha);
     void updateUwbDistance(uint8_t anchorId, float newDist);
@@ -54,6 +55,8 @@ public:
     bool hasBleTargets() {
         return !target_ble_devices.empty();
     }
+    void markUwbAnchorDead(uint8_t anchorId);
+    void incrementUwbError(uint8_t anchorId);
 };
 
 // Globalna instancja dostępna wszędzie po zaincludowaniu nagłówka

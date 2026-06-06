@@ -45,7 +45,7 @@ bool AppDataManager::parseBlePayload(String payload) {
         if (idStr.length() > 0) {
           // strtol automatycznie rozpoznaje "0x" i konwertuje szesnastkowy tekst na czystą liczbę uint8_t
             uint8_t parsedId = (uint8_t)strtol(idStr.c_str(), NULL, 16);
-            active_uwb_anchors.push_back({parsedId, -1.0f});
+            active_uwb_anchors.push_back({parsedId, -1.0f, millis(), 0}); // -1.0f oznacza "jeszcze nie zmierzono", 0 failed attempts
         }
         uwbStr = uwbStr.substring(commaIndex + 1);
     }
@@ -54,7 +54,7 @@ bool AppDataManager::parseBlePayload(String payload) {
     if (uwbStr.length() > 0) {
         // TUTAJ TEŻ MUSI BYĆ strtol, inaczej wyjdzie 0!
         uint8_t parsedId = (uint8_t)strtol(uwbStr.c_str(), NULL, 16);
-        active_uwb_anchors.push_back({parsedId, -1.0f});
+        active_uwb_anchors.push_back({parsedId, -1.0f, millis(), 0});
     }
 
     // --- PARSOWANIE TAGÓW BLE ---
@@ -66,14 +66,14 @@ bool AppDataManager::parseBlePayload(String payload) {
         String mac = bleStr.substring(0, commaIndex);
         mac.trim();
         if (mac.length() > 0) {
-            target_ble_devices.push_back({mac.c_str(), -1.0f}); // -1.0 oznacza "jeszcze nie zmierzono"
+            target_ble_devices.push_back({mac.c_str(), -1.0f, millis()}); // -1.0 oznacza "jeszcze nie zmierzono"
         }
         bleStr = bleStr.substring(commaIndex + 1);
     }
     // Dodanie ostatniego MACa w łańcuchu
     bleStr.trim();
     if (bleStr.length() > 0) {
-        target_ble_devices.push_back({bleStr.c_str(), -1.0f});
+        target_ble_devices.push_back({bleStr.c_str(), -1.0f, millis()});
     }
 
     printCurrentState();
@@ -95,7 +95,7 @@ void AppDataManager::updateBleDistance(const std::string& mac, float newDist, fl
     std::lock_guard<std::mutex> lock(dataMutex);
     for (auto& device : target_ble_devices) {
         if (device.mac == mac) {
-            //device.last_seen_ms = millis();
+            device.last_seen_ms = millis();
             if (device.distance < 0) {
                 device.distance = newDist; // Pierwszy strzał pomiaru
             } else {
@@ -112,7 +112,7 @@ void AppDataManager::updateUwbDistance(uint8_t anchorId, float newDist) {
     for (auto& anchor : active_uwb_anchors) {
         if (anchor.id == anchorId) {
             anchor.distance = newDist;
-            //anchor.last_seen_ms = millis(); // <--- ZNACZNIK ŻYCIA KOTWICY
+            anchor.last_seen_ms = millis(); // <--- ZNACZNIK ŻYCIA KOTWICY
             return;
         }
     }
@@ -190,7 +190,7 @@ void AppDataManager::printCurrentState() {
 
     // Jeśli go nie ma, dodajemy do listy startowej
     if (!alreadyExists) {
-        target_ble_devices.push_back({mac, -1.0f});
+        target_ble_devices.push_back({mac, -1.0f, millis()});
     }
 }
 
@@ -200,4 +200,31 @@ uint8_t AppDataManager::getUwbAnchorId(int index) {
         return active_uwb_anchors[index].id;
     }
     return 0;
+}
+
+void AppDataManager::markUwbAnchorDead(uint8_t anchorId) {
+    std::lock_guard<std::mutex> lock(dataMutex);
+    for (auto& anchor : active_uwb_anchors) {
+        if (anchor.id == anchorId && anchor.distance > 0) {
+            anchor.distance = -1.0f; // Zabij ducha!
+            Serial.printf("[AppData] 👻 KOTWICA 0x%04X UZNANA ZA MARTWĄ!\n", anchor.id);
+            return;
+        }
+    }
+}
+
+// Oraz dodaj zwiększanie licznika błędów:
+void AppDataManager::incrementUwbError(uint8_t anchorId) {
+    std::lock_guard<std::mutex> lock(dataMutex);
+    for (auto& anchor : active_uwb_anchors) {
+        if (anchor.id == anchorId) {
+            anchor.failed_attempts++;
+            // Jeśli zawiodła np. 15 razy (co trwa ułamek sekundy w pętli), zabij ją
+            if (anchor.failed_attempts > 15 && anchor.distance > 0) {
+                anchor.distance = -1.0f;
+                Serial.printf("[AppData] 👻 KOTWICA 0x%04X UMARŁA (TIMEOUTY)!\n", anchor.id);
+            }
+            return;
+        }
+    }
 }
