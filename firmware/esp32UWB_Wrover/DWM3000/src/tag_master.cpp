@@ -74,7 +74,7 @@ class MyAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
               
                 appData.updateBleDistance(deviceMac, calculateDistance(currentRssi), EMA_ALPHA);
             }
-            return; // Kończymy, nie interesują nas inne urządzenia! NIE KONCZYMY => LOGIKA TRIGGEROWANIA NIGDY NIE ZADZIALA
+            return; // wywolywane wttw mamy znane urzadzenie wiec nie musimy go sprawdzac
         }
 
         // ---------------------------------------------------------
@@ -368,7 +368,9 @@ void loop() {
                                    
                                 }
                                 else {
+                                    
                                     Serial.println("[TAG] UWB filter not ready (not enough data).");
+
                                 }
                             }else {
                                 Serial.println("[TAG] Błąd fizyki! Surowy dystans poza zakresem 0-100m.");
@@ -378,6 +380,7 @@ void loop() {
                         }
                     } else {
                         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
+                        appData.incrementUwbError(target_id);
                         Serial.println("[TAG][BŁĄD] TIMEOUT 2: Kotwica nie przysłała paczki REPORT na czas!");
                     }
                 } else {
