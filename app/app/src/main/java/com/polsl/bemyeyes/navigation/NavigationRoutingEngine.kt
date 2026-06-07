@@ -21,9 +21,11 @@ class NavigationRoutingEngine(
     private var lastPassAnnouncementTimeMs: Long = 0
     private val PASSING_THRESHOLD_METERS = 2.0
     private val ANNOUNCEMENT_COOLDOWN_MS = 8000
+    private var lastArrivalAnnouncementTimeMs = 0L   // Kiedy ostatnio powiedziano "Cel osiągnięty / Jesteś przed..."
+    private var lastProximityAnnouncementTimeMs = 0L // Kiedy ostatnio powiedziano "Zbliżasz się..."
 
-    private var reachAnnounced10 = false
-    private var reachAnnounced15 = false
+    // Stała konfiguracja: 6 sekund przerwy między powtórzeniami tego samego alertu
+    private val TARGET_ZONE_COOLDOWN_MS = 6000L
     private var lastAnnouncedDistanceInt = -1
 
     //--zmienne stanu (przsylanie listy urzadzen do espa) --
@@ -43,8 +45,9 @@ class NavigationRoutingEngine(
     fun setNavigationTarget(target: NavigationTarget) {
         // RESETUJEMY FLAGI PRZY WYBORZE NOWEGO CELU!
         //brak COLD start- > target null usatwiamy makro w
-        reachAnnounced10 = false
-        reachAnnounced15 = false
+        lastArrivalAnnouncementTimeMs = 0
+        lastProximityAnnouncementTimeMs = 0
+
         lastAnnouncedDistanceInt = -1
         currentTarget = target
         lastTargetSignalTime = System.currentTimeMillis() // Resetujemy czas!
@@ -62,7 +65,7 @@ class NavigationRoutingEngine(
 
         watchdogJob = CoroutineScope(Dispatchers.Main).launch {
             // Pętla kręci się tak długo, jak mamy cel i do niego nie dotarliśmy
-            while (currentTarget != null && !reachAnnounced15) {
+            while (currentTarget != null ) {
                 delay(8000) // Usypiamy w tle na 8 sekund
 
                 val timeSinceLastSignal = System.currentTimeMillis() - lastTargetSignalTime
@@ -94,7 +97,7 @@ class NavigationRoutingEngine(
             if(currentLocationId == null){
                 // Zwracamy listę nowych urządzeń OD RAZU (pierwsze uruchomienie)
                 currentLocationId = scannedDev.locationId
-                println("🔥 ZMIANA LOKALIZACJI NA: $currentLocationId")
+                println("nowa LOKALIZACJI : $currentLocationId")
                 //zapis czasu na kolejne pomiary
                 lastTransitionTime = currentTime
                 // ========================================================
@@ -140,14 +143,15 @@ class NavigationRoutingEngine(
         if (currentTarget != null) {
 
             if (currentTarget!!.isMacroTarget) {
+                announceDistanceProgress(detectedDevice,distanceOrRssi)
                 // TRYB MAKRO: Osiągamy cel, jeśli zlapaliśmy sygnał z JAKIEGOKOLWIEK
                 // urządzenia, które leży w docelowym Location_ID
-                if (detectedDevice.locationId == currentTarget!!.locationId) {
-                    speechService.announceImportant("Jesteś w strefie: ${currentTarget!!.name}. Wybierz teraz dokładny cel z listy.")
-                    currentTarget = null // Osiągnięto cel, resetujemy!
 
-                    // UWAGA: UI samo się tu zaktualizuje, bo zmieni się currentLocationId
-                }
+                speechService.announceImportant("Jesteś w strefie: ${currentTarget!!.name}. Wybierz teraz dokładny cel z listy.")
+                currentTarget = null // Osiągnięto cel, resetujemy!
+
+                // UWAGA: UI samo się tu zaktualizuje, bo zmieni się currentLocationId
+
             } else {
                 // TRYB MIKRO: Mierzymy odległość tylko do JEDNEGO konkretnego adresu MAC
                 if (macAddress == currentTarget!!.associatedMac) {
@@ -170,7 +174,7 @@ class NavigationRoutingEngine(
     }
 
     // =========================================================================
-    // FUNKCJE POMOCNICZE AUDIO (Twoje autorskie, zaktualizowane modele)
+    // FUNKCJE POMOCNICZE AUDIO
     // =========================================================================
 
     private fun evaluatePathAndAnnounce(detectedDevice: IoTDevice) {
@@ -188,51 +192,54 @@ class NavigationRoutingEngine(
     private fun announceDistanceProgress(device: IoTDevice,distance: Double) {
         val distanceInt = distance.roundToInt()
         val dest = currentTarget ?: return // Używamy nowej zmiennej currentTarget!
+        val currentTime = System.currentTimeMillis()
 
-        lastTargetSignalTime = System.currentTimeMillis() // tzn ze dostalismy syganl z targetu
+        lastTargetSignalTime = currentTime // tzn ze dostalismy syganl z targetu
 
         if (device.deviceType == "UWB_ANCHOR") {
             // =======================================================
             // ŚCIEŻKA UWB: Dokładne odliczanie ("Autostrada")
-            // =====
-            // Scenariusz: Finisz (1.0m)
-            if (distance <= 1.0 && !reachAnnounced10) {
-                speechService.announceImportant("Jesteś przed ${dest.name}")
-                reachAnnounced10 = true
-                return
-            }
+            // Scenariusz: Finisz (1.5m) -> Tutaj kończymy podróż!
+            if (distance <= 1.5) {
+                if (currentTime - lastArrivalAnnouncementTimeMs > TARGET_ZONE_COOLDOWN_MS) {
+                    lastArrivalAnnouncementTimeMs = currentTime
 
-            // Scenariusz: Finisz (1.5m)
-            if (distance <= 1.5 && !reachAnnounced15) {
-                speechService.announceImportant("Dotarłeś do celu. Jesteś przed ${dest.name}")
-                reachAnnounced15 = true
-                return
+
+                    // Gdyby w przyszłości pojawił się cel mikro na UWB
+                    speechService.announceImportant("Dotarłeś do celu. Jesteś przed ${dest.name}")
+
+
+                    currentTarget =
+                        null // 🔥 Resetujemy cel DOPIERO na prawdziwym finiszu odległościowym!
+                    return
+                }
             }
 
             // Scenariusz: Zbliżanie się// czyli to zostawiamy bez podzialu na device type?
             if (distance > 1.5) {
                 if (distanceInt <= 10) {
                     if (distanceInt != lastAnnouncedDistanceInt) {
-                        speechService.announceBackground(
-                            "$distanceInt ${
-                                getMeterSpelling(
-                                    distanceInt
-                                )
-                            }"
-                        )
+                        speechService.announceBackground("$distanceInt ${getMeterSpelling(distanceInt)}")
                         lastAnnouncedDistanceInt = distanceInt
                     }
                 } else {
-                    val roundedTo5 = (distanceInt / 5) * 5
-                    if (roundedTo5 != lastAnnouncedDistanceInt && distanceInt % 5 == 0) {
-                        speechService.announceBackground(
-                            "$distanceInt ${
-                                getMeterSpelling(
-                                    distanceInt
-                                )
-                            }"
-                        )
-                        lastAnnouncedDistanceInt = roundedTo5
+                    if (currentTime - lastProximityAnnouncementTimeMs > TARGET_ZONE_COOLDOWN_MS) {
+                        lastProximityAnnouncementTimeMs = currentTime
+
+                        speechService.announceImportant("Jesteś w strefie: ${dest.name}. Wybierz teraz dokładny cel z listy.")
+
+                        val roundedTo5 = (distanceInt / 5) * 5
+                        if (roundedTo5 != lastAnnouncedDistanceInt && distanceInt % 5 == 0) {
+                            speechService.announceBackground(
+                                "$roundedTo5 ${
+                                    getMeterSpelling(
+                                        roundedTo5
+                                    )
+                                }"
+                            )
+                            lastAnnouncedDistanceInt = roundedTo5
+
+                        }
                     }
                 }
             }
@@ -241,23 +248,27 @@ class NavigationRoutingEngine(
             // =======================================================
             // ŚCIEŻKA BLE: Logika rozmyta (Brak odliczania metrów!)
             // =======================================================
-
             // Zamiast czytać przeskakujące metry, odpalamy komunikaty
             // tylko po przekroczeniu "magicznych barier" bliskości.
 
             // Bariera 1: Cel osiągnięty (Bardzo mocny sygnał BLE)
-            if (distance <= 1.5 && !reachAnnounced15) {
+            if (distance <= 1.5 ) {
+                if (currentTime - lastArrivalAnnouncementTimeMs > TARGET_ZONE_COOLDOWN_MS) {
+                    lastArrivalAnnouncementTimeMs = currentTime
                 speechService.announceImportant("Cel odnaleziony. Jesteś przy: ${dest.name}")
-                reachAnnounced15 = true
-                reachAnnounced10 = true // Blokujemy dalsze komunikaty
+
+                currentTarget = null // Czyścimy cel mikro po znalezieniu
                 return
+                }
             }
 
             // Bariera 2: Strefa pobliża (Zaczynamy łapać sygnał BLE)
             // Wymaga dodania małej flagi 'nearAnnounced' (lub użycia reachAnnounced10 w nowym celu)
-            if (distance > 1.5 && distance <= 4.0 && !reachAnnounced10) {
-                speechService.announceImportant("Zbliżasz się do: ${dest.name}")
-                reachAnnounced10 = true // Flaga chroni przed powtarzaniem w kółko
+            if (distance > 1.5 && distance <= 4.0 ) {
+                if (currentTime - lastProximityAnnouncementTimeMs > TARGET_ZONE_COOLDOWN_MS) {
+                    lastProximityAnnouncementTimeMs = currentTime
+                    speechService.announceImportant("Zbliżasz się do: ${dest.name}")
+                }
             }
         }
     }
