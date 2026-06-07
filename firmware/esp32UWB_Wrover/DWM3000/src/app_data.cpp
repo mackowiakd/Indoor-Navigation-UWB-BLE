@@ -23,6 +23,16 @@ AppDataManager::AppDataManager() {
 */
 bool AppDataManager::parseBlePayload(String payload) {
     Serial.println("\n[AppData] Otrzymano nową konfigurację: " + payload);
+    // ==========================================================
+    // DODANY KOD: OBSŁUGA TWARDEGO RESETU (COLD START)
+    // ==========================================================
+    if (payload == "RESET") {
+        std::lock_guard<std::mutex> lock(dataMutex);
+        active_uwb_anchors.clear();
+        target_ble_devices.clear();
+        Serial.println("[AppData] 🧹 SYSTEM ZRESETOWANY! Wracam do trybu nasłuchu (Scout/Cold Start).");
+        return true; // Kończymy funkcję, nie parsujemy dalej!
+    }
     
 
     int uwbIndex = payload.indexOf("U:");
