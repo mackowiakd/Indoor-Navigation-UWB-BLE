@@ -204,13 +204,15 @@ class NavigationRoutingEngine(
                 if (currentTime - lastArrivalAnnouncementTimeMs > TARGET_ZONE_COOLDOWN_MS) {
                     lastArrivalAnnouncementTimeMs = currentTime
 
+                    if (dest.isMacroTarget) {
+                        // Jeśli szliśmy do pokoju:
+                        speechService.announceImportant("Jesteś w strefie: ${dest.name}. Wybierz teraz dokładny cel z listy.")
+                    } else {
+                        // Jeśli w przyszłości podepniesz pod UWB cel mikro (np. konkretne biurko z kotwicą):
+                        speechService.announceImportant("Dotarłeś do celu. Jesteś przed ${dest.name}")
+                    }
 
-                    // Gdyby w przyszłości pojawił się cel mikro na UWB
-                    speechService.announceImportant("Dotarłeś do celu. Jesteś przed ${dest.name}")
-
-
-                    currentTarget =
-                        null // 🔥 Resetujemy cel DOPIERO na prawdziwym finiszu odległościowym!
+                    currentTarget = null // 🔥 Resetujemy cel DOPIERO na prawdziwym finiszu odległościowym!
                     return
                 }
             }
@@ -224,9 +226,7 @@ class NavigationRoutingEngine(
                     }
                 } else {
                     if (currentTime - lastProximityAnnouncementTimeMs > TARGET_ZONE_COOLDOWN_MS) {
-                        lastProximityAnnouncementTimeMs = currentTime
 
-                        speechService.announceImportant("Jesteś w strefie: ${dest.name}. Wybierz teraz dokładny cel z listy.")
 
                         val roundedTo5 = (distanceInt / 5) * 5
                         if (roundedTo5 != lastAnnouncedDistanceInt && distanceInt % 5 == 0) {
@@ -238,6 +238,8 @@ class NavigationRoutingEngine(
                                 }"
                             )
                             lastAnnouncedDistanceInt = roundedTo5
+                            // Czas aktualizujemy TYLKO wtedy, gdy apka naprawdę coś powiedziała!
+                            lastProximityAnnouncementTimeMs = currentTime
 
                         }
                     }
