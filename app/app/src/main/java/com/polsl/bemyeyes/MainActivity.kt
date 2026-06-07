@@ -101,6 +101,18 @@ class MainActivity : ComponentActivity() {
                         microTargets = microList,
                         currentLocation = currentLocation,
 
+                        // ✅ IMPLEMENTACJA REAKCJI NA RESET:
+                        onClearNavigation = {
+                            routingEngine.clearCurrentTarget() // Zerujemy cel w silniku
+                            currentTargetNameState.value = "Brak celu (Wybierz coś z listy)" // Czyścimy UI
+
+                            // Czyścimy filtr na ESP32 (wysyłamy pustą listę, by przestał filtrować cel)
+                            bleManager.sendFilterToEsp(emptyList())
+
+                            speechService.announceImportant("Nawigacja anulowana.")
+                            debugLogs.add(0, "🛑 Manualnie zakończono nawigację.")
+                        },
+
 
                         onStartNavigation = { target ->
 
@@ -198,7 +210,8 @@ fun NavigationScreen(
     macroTargets: List<NavigationTarget>,
     microTargets: List<NavigationTarget>,
     currentTargetName: String,
-    currentLocation: Int? = null
+    currentLocation: Int? = null,
+    onClearNavigation: () -> Unit // ✅ NOWY PARAMETR
 
 
 ) {
@@ -256,6 +269,15 @@ fun NavigationScreen(
                     Text(currentTargetName, color = Color.White, style = MaterialTheme.typography.titleMedium)
                 }
             }
+        }
+        // Czerwony przycisk "X" do natychmiastowego wyłączenia nawigacji
+        Button(
+            onClick = onClearNavigation,
+            colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+            modifier = Modifier.height(58.dp), // Wysokość dopasowana do karty
+            contentPadding = PaddingValues(horizontal = 16.dp)
+        ) {
+            Text("X", color = Color.White, fontSize = 20.sp)
         }
 
         Spacer(modifier = Modifier.height(8.dp))

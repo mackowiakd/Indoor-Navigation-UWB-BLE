@@ -194,6 +194,7 @@ class BleConnectionManager(
         val service = gatt.getService(SERVICE_UUID) ?: return
         val filterChar = service.getCharacteristic(FILTER_CHAR_UUID) ?: return
 
+
         // oczekiwany format listy:U:123;B:ff:ff:12:b1:64:d1,a8:03:2a:b8:ee:fa
         // 2. Filtrujemy urządzenia UWB i łączymy ich adresy MAC przecinkiem
         val uwbMacs = devices
@@ -206,8 +207,12 @@ class BleConnectionManager(
             .joinToString(",") { it.macAddress }
 
         // 4. Składamy wszystko w docelowy format
-        val payload = "U:$uwbMacs;B:$bleMacs"
+        var payload = "U:$uwbMacs;B:$bleMacs"
 
+        if (devices.isEmpty()) {
+           payload="RESET"
+
+        }
         // 3. Wkładamy do rury i wysyłamy
         filterChar.value = payload.toByteArray(Charsets.UTF_8)
         filterChar.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT

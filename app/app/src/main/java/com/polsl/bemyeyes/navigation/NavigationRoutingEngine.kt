@@ -42,6 +42,12 @@ class NavigationRoutingEngine(
     // AKCJE UŻYTKOWNIKA (Wywoływane z MainActivity po kliknięciu przycisku)
     // =========================================================================
 
+    fun clearCurrentTarget() {
+        currentTarget = null
+        lastArrivalAnnouncementTimeMs = 0L
+        lastProximityAnnouncementTimeMs = 0L
+        lastAnnouncedDistanceInt = -1
+    }
     fun setNavigationTarget(target: NavigationTarget) {
         // RESETUJEMY FLAGI PRZY WYBORZE NOWEGO CELU!
         //brak COLD start- > target null usatwiamy makro w
@@ -212,7 +218,7 @@ class NavigationRoutingEngine(
                         speechService.announceImportant("Dotarłeś do celu. Jesteś przed ${dest.name}")
                     }
 
-                    currentTarget = null // 🔥 Resetujemy cel DOPIERO na prawdziwym finiszu odległościowym!
+                    //currentTarget = null //  logika powtarzania wtdty mija sie z zalozeniem
                     return
                 }
             }
@@ -259,7 +265,6 @@ class NavigationRoutingEngine(
                     lastArrivalAnnouncementTimeMs = currentTime
                 speechService.announceImportant("Cel odnaleziony. Jesteś przy: ${dest.name}")
 
-                currentTarget = null // Czyścimy cel mikro po znalezieniu
                 return
                 }
             }
