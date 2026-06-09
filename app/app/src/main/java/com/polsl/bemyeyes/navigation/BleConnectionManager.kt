@@ -130,6 +130,7 @@ class BleConnectionManager(
             val records = payload.split(";")
 
             for (record in records) {
+                if (record.isBlank()) continue
                 var id = ""
                 var dist: Double? = null
 
