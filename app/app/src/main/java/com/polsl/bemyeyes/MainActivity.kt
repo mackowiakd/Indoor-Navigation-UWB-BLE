@@ -255,21 +255,36 @@ fun NavigationScreen(
         // ==========================================================
         // 3. PANEL: AKTYWNY CEL NAWIGACJI
         // ==========================================================
-        Card(
+
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF0D47A1)) // Ciemnoniebieski
+            horizontalArrangement = Arrangement.spacedBy(8.dp), // Odstęp między kartą a przyciskiem
+            verticalAlignment = Alignment.CenterVertically // Wyrównanie w pionie do środka
         ) {
-            Row(
-                modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Card(
+                modifier = Modifier.weight(1f),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0D47A1)) // Ciemnoniebieski
             ) {
-                Text("🏁 ", fontSize = 24.sp)
-                Column {
-                    Text("Aktywny cel podróży:", color = Color.LightGray, style = MaterialTheme.typography.labelMedium)
-                    Text(currentTargetName, color = Color.White, style = MaterialTheme.typography.titleMedium)
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("🏁 ", fontSize = 24.sp)
+                    Column {
+                        Text(
+                            "Aktywny cel podróży:",
+                            color = Color.LightGray,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                        Text(
+                            currentTargetName,
+                            color = Color.White,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
                 }
             }
-        }
+
         // Czerwony przycisk "X" do natychmiastowego wyłączenia nawigacji
         Button(
             onClick = onClearNavigation,
@@ -279,6 +294,7 @@ fun NavigationScreen(
         ) {
             Text("X", color = Color.White, fontSize = 20.sp)
         }
+    }
 
         Spacer(modifier = Modifier.height(8.dp))
 
