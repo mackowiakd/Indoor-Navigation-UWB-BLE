@@ -176,6 +176,7 @@ class BleConnectionManager(
                             routingEngine.processNewTelemetryData(id, dist)
 
                     }
+                    //call calculateUserPosition2D
                 }
                 else {
                     postLog(" brak danych od $id: $payload")

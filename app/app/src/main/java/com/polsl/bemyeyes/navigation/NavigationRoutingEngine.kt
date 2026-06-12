@@ -15,8 +15,15 @@ class NavigationRoutingEngine(
 ) {
 
     // 1. STANY SILNIKA NAWIGACJI
+    // Współrzędne historyczne użytkownika
+    private var previousX: Double? = null
+    private var previousY: Double? = null
+    // ID urządzeń, które już minęliśmy w tej sesji (żeby nie powtarzać komunikatu co 3 sekundy)
+    private val announcedPoisInStep = mutableSetOf<String>()
 
     private var currentTarget: NavigationTarget? = null // Dokąd idę?
+
+
 
     private var lastPassAnnouncementTimeMs: Long = 0
     private val PASSING_THRESHOLD_METERS = 2.0
@@ -47,6 +54,13 @@ class NavigationRoutingEngine(
         lastArrivalAnnouncementTimeMs = 0L
         lastProximityAnnouncementTimeMs = 0L
         lastAnnouncedDistanceInt = -1
+        resetMovementHistory()
+    }
+    // 🔥 WAŻNE: Funkcja resetująca pozycję wywoływana przy setNavigationTarget oraz clearCurrentTarget!
+    fun resetMovementHistory() {
+        previousX = null
+        previousY = null
+        announcedPoisInStep.clear()
     }
     fun setNavigationTarget(target: NavigationTarget) {
         // RESETUJEMY FLAGI PRZY WYBORZE NOWEGO CELU!
@@ -56,6 +70,7 @@ class NavigationRoutingEngine(
 
         lastAnnouncedDistanceInt = -1
         currentTarget = target
+        resetMovementHistory()
         lastTargetSignalTime = System.currentTimeMillis() // Resetujemy czas!
 
         if (target.isMacroTarget) {
@@ -82,6 +97,104 @@ class NavigationRoutingEngine(
                 }
             }
         }
+    }
+    /**
+     * Główna funkcja wyliczenia pozycji 2D z 2 kotwic (wywoływana w strumieniu telemetrii UWB)
+     */
+    fun calculateUserPosition2D(anchor1Mac: String, d1: Double, anchor2Mac: String, d2: Double) {
+        val a1 = buildingTopologyDB.getDeviceByMac(anchor1Mac) ?: return
+        val a2 = buildingTopologyDB.getDeviceByMac(anchor2Mac) ?: return
+
+        // Pobieramy współrzędne globalne kotwic z bazy danych
+        val x1 = a1.globalX ?: return
+        val y1 = a2.globalY ?: return
+        val x2 = a2.globalX ?: return
+        val y2 = a2.globalY ?: return
+
+        // 1. Dystans między kotwicami obliczany z bazy danych
+        val D = Math.hypot(x2 - x1, y2 - y1)
+        if (D < 0.1) return // Ochrona przed dzieleniem przez zero
+
+        // 2. Rzutowanie pozycji (względny dystans wzdłuż osi)
+        val distFromA1 = (d1 * d1 - d2 * d2 + D * D) / (2 * D)
+
+        // 3. Proporcja położenia
+        val t = distFromA1 / D
+
+        // 4. Interpolacja liniowa - Pozycja 2D użytkownika na osi korytarza
+        val currentX = x1 + t * (x2 - x1)
+        val currentY = y1 + t * (y2 - y1)
+
+        // Odpalamy analizę otoczenia
+        evaluatePassingObjects2D(currentX, currentY)
+    }
+
+    /**
+     * Analiza iloczynu wektorowego pod kątem lewej/prawej strony
+     */
+    private fun evaluatePassingObjects2D(currentX: Double, currentY: Double) {
+        // Jeśli nie ma historii, zapisujemy obecny punkt i czekamy na kolejną paczkę danych
+        if (previousX == null || previousY == null) {
+            previousX = currentX
+            previousY = currentY
+            return
+        }
+
+        // Wektor Twojego ruchu: skąd-dokąd (v)
+        val moveDx = currentX - previousX!!
+        val moveDy = currentY - previousY!!
+
+        // Filtrowanie szumu: jeśli użytkownik stoi w miejscu, nie wyliczamy kierunku
+        if (Math.hypot(moveDx, moveDy) < 0.4) return
+
+        // Pobieramy z bazy wszystkie cele mikro (POI) dla obecnej strefy
+        val activePOIs = buildingTopologyDB.getMicroTargets(currentLocationId)
+
+        for (target in activePOIs) {
+
+            // 🔥 KLUCZOWY KROK: Wyciągamy fizyczne urządzenie z bazy po adresie MAC,
+            // aby dobrać się do jego współrzędnych globalnych X i Y
+            val device = buildingTopologyDB.getDeviceByMac(target.associatedMac ?: "") ?: continue
+
+            // Teraz bezpiecznie wyciągamy współrzędne 2D z obiektu device!
+            val poiX = device.globalX ?: continue
+            val poiY = device.globalY ?: continue
+
+            // Obliczamy odległość do obiektu
+            val distanceToPoi = Math.hypot(poiX - currentX, poiY - currentY)
+
+            // Jeśli minęliśmy obiekt (jest w promieniu strefy "Mijasz", np. 1.8 metra)
+            if (distanceToPoi <= 1.8) {
+
+                // Sprawdzamy czy już o nim nie mówiliśmy przed chwilą
+                if (announcedPoisInStep.contains(target.associatedMac)) continue
+
+                // Wektor od użytkownika do obiektu (p)
+                val poiDx = poiX - currentX
+                val poiDy = poiY - currentY
+
+                //  ILOCZYN WEKTOROWY 2D (Wyznacznik macierzy)
+                val crossProduct = (moveDx * poiDy) - (moveDy * poiDx)
+
+                // Strefa martwa: jeśli crossProduct jest bliski zero, obiekt leży dokładnie przed/za nami
+                if (Math.abs(crossProduct) < 0.05) continue
+
+                val side = if (crossProduct > 0) "lewej" else "prawej"
+
+                speechService.announceBackground("Mijasz ${target.name} po Twojej $side stronie.")
+                announcedPoisInStep.add(target.associatedMac ?: "")
+            } else {
+                // Gdy użytkownik oddali się od obiektu, usuwamy go z listy ogłoszonych,
+                // żeby system mógł go ogłosić, gdy użytkownik będzie wracał korytarzem
+                if (distanceToPoi > 3.0) {
+                    announcedPoisInStep.remove(target.associatedMac)
+                }
+            }
+        }
+
+        // Aktualizacja historii
+        previousX = currentX
+        previousY = currentY
     }
     // =========================================================================
     // AKCJE Z BLUETOOTHA (Wywoływane przez BleConnectionManager setki razy)
