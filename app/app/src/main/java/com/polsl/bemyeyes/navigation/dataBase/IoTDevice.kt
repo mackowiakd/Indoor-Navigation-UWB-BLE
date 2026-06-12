@@ -7,5 +7,8 @@ data class IoTDevice(
     @SerializedName("device_type") val deviceType: String,
     @SerializedName("location_id") val locationId: Int,
     @SerializedName("semantic_role") val semanticRole: String,
-    @SerializedName("tx_power_config") val txPowerConfig: Int?
+    @SerializedName("tx_power_config") val txPowerConfig: Int?,
+    @SerializedName("global_x") val globalX: Double?,
+    @SerializedName("global_y") val globalY: Double?
+
 )
