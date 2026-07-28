@@ -23,7 +23,7 @@ The system processes spatial data through a two-tier approach:
 
 To maintain a strict and deliverable engineering focus for this thesis, a clear line was drawn between **Topological Awareness** and **Absolute Coordinate Positioning**:
 * **In Scope (Implemented):** 1D distance tracking, multi-zone context switching, asynchronous passing/landmark announcements ("You are passing: Window"), proximity-based finish alerts, and dynamic BLE hardware white-list filtering.
-* **Out of Scope (Future Work):** Multilateration/Trilateration algorithms, absolute XY coordinate mapping, and compass-driven angular vector calculations. The system is intentionally designed as a robust **hardware-and-software communication framework** that can easily ingest coordinate-calculation layers in future iterations (e.g., a Master's thesis expansion).
+* **Transitioning Scope (WIP - Auto-Calibration):** The system is currently evolving from a purely topological model to a **Local Coordinate System (2D XY)**. We are developing an Auto-Surveying module to dynamically calculate anchor coordinates and map BLE tags without manual tape measurements. Full Multilateration/Trilateration algorithms utilizing these coordinates are reserved as a Future Work / Master's thesis expansion for the team. 
 * 
 ## 🌟 System Architecture
 
@@ -76,3 +76,5 @@ This repository is organized as a Monorepo containing hardware firmware, testing
 - [ ] RSSI to Distance calibration (Log-Distance Path Loss Model).
 - [ ] Predictive Maintenance Data Mining (HDiSED Project - Battery decay analysis).
 - [ ] Text-To-Speech (TTS) voice feedback implementation.
+- [ ] **[IN PROGRESS] UWB Anchor Auto-Calibration (Auto-Surveying):** Application-side logic (Strategy Pattern for 2-anchor and 3-anchor coordinate mapping) is currently being implemented. Hardware-side (ESP32 role-switching) and physical tests are pending.
+- [ ] **[PLANNED] BLE Walkabout Calibration (Point-and-Shoot):** Mapping BLE tag coordinates dynamically to the DB by physically walking to them and fetching current UWB positions. Depends on the completion of UWB Auto-Calibration.

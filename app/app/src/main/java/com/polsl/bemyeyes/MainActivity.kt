@@ -45,6 +45,7 @@ class MainActivity : ComponentActivity() {
     private val appToEspLogs = mutableStateListOf<String>() // --- KONSOLA 2: Wysyłka z Apki (APP -> ESP) ---
     private val currentTargetNameState = mutableStateOf("Brak celu (Wybierz coś z listy)")
     private val dbSyncVersion = mutableStateOf(0) //oberwowany przez Compose - informuje o zmiane w DB
+    private val autoCalibrationEngine = AutoCalibrationEngine()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -138,7 +139,46 @@ class MainActivity : ComponentActivity() {
                          },
                         onTestApiClick = {
                             scope.launch { fetchDatabase() }
+                        },
+                        // --- NOWE: Wpinamy logikę wywołania kalibracji ---
+                        onCalibrateZoneClick = { locationId ->
+                            if (locationId != null) {
+                                debugLogs.add(0, "🛠 [ADMIN] Uruchamiam Auto-Kalibrację dla strefy $locationId")
+
+                                // 1. Wyciągamy z bazy tylko UWB Anchory dla tej strefy
+                                val zoneAnchors = topologyDatabase.getDevicesForLocation(locationId)
+                                    .filter { it.deviceType == "UWB_ANCHOR" }
+
+                                if (zoneAnchors.size >= 2) {
+                                    // 2. TODO: Tutaj ESP32 powinno zrobić ping-pong między kotwicami.
+                                    // Na ten moment MOKUJEMY wynik, żeby zobaczyć, czy działa
+                                    val mockDistanceMatrix = arrayOf(
+                                        doubleArrayOf(0.0, 8.45), // Odległość Kotwica 1 -> Kotwica 2 (8.45m)
+                                        doubleArrayOf(8.45, 0.0)
+                                    )
+
+                                    try {
+                                        val calibratedAnchors = autoCalibrationEngine.performCalibration(mockDistanceMatrix, zoneAnchors)
+
+                                        debugLogs.add(0, "✅ Kalibracja Zakończona!")
+                                        calibratedAnchors.forEach {
+                                            debugLogs.add(0, "📍 Kotwica ${it.macAddress} otrzymała kordynaty: X=${it.globalX}, Y=${it.globalY}")
+                                            // TODO: W przyszłości zrobimy tu zapytanie do bazy (Retrofit PATCH),
+                                            // żeby wysłać nowe koordynaty z powrotem na serwer.
+                                        }
+                                    } catch (e: Exception) {
+                                        debugLogs.add(0, "❌ Błąd kalibracji: ${e.message}")
+                                    }
+                                } else {
+                                    debugLogs.add(0, "❌ Za mało kotwic w strefie do kalibracji (wymagane min. 2)")
+                                }
+                            } else {
+                                debugLogs.add(0, "❌ Najpierw musisz wejść do jakiejś strefy (Cold Start)!")
+                            }
                         }
+
+
+
                     )
                 }
             }
@@ -205,13 +245,14 @@ fun NavigationScreen(
     onStartNavigation: (NavigationTarget) -> Unit, // zamiast string?? bo potrzebujemy tez mac adressu
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
-    onTestApiClick: () -> Unit, // <--- NOWY PARAMETR (Callback)
-    appToEspLogs: List<String>, // NOWA KONSOLA WYCHODZĄCA
+    onTestApiClick: () -> Unit, // <---  PARAMETR (Callback)
+    appToEspLogs: List<String>, //  KONSOLA WYCHODZĄCA
     macroTargets: List<NavigationTarget>,
     microTargets: List<NavigationTarget>,
     currentTargetName: String,
     currentLocation: Int? = null,
-    onClearNavigation: () -> Unit // ✅ NOWY PARAMETR
+    onClearNavigation: () -> Unit ,
+    onCalibrateZoneClick: (Int?) -> Unit // <--- NOWY PARAMETR (Kalibracja)
 
 
 ) {
@@ -307,8 +348,19 @@ fun NavigationScreen(
             Text("Testuj API ")
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-        //obie nie dzialaja nic sie nie zmienia nie da sie kliknac- zwykly tekst
+        Spacer(modifier = Modifier.height(8.dp))
+        // ==========================================================
+        // PANEL ADMINA: Przycisk Auto-Kalibracji
+        // ==========================================================
+        Button(
+            onClick = { onCalibrateZoneClick(currentLocation) },
+            modifier = Modifier.fillMaxWidth().height(40.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE65100)) // Ciemnopomarańczowy
+        ) {
+            Text("🔧 ADMIN: Autokalibruj obecną strefę")
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
         // ==========================================================
         // 5. LISTA MAKRO (Przekazanie zmiennej 'macroTargets' do UI)
         Text("📍 MAKRONAWIGACJA (Stałe)", style = MaterialTheme.typography.titleMedium)
