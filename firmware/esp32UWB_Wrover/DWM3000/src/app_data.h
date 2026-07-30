@@ -6,6 +6,8 @@
 
 #define MAX_UWB_ANCHORS 10
 
+static bool isCalibrationCommand=0; //bez static mam error multiple definition of `isCalibrationCommand' in app_data.cpp and tag_master.cpp
+
 // Struktura trzymająca adres MAC i jego aktualny dystans
 //Prawdop wymaga MUTEXA dla asyn task BLE
 struct BleDeviceData {
@@ -25,6 +27,7 @@ private:
     std::mutex dataMutex; // <--- STRAŻNIK PAMIĘCI RAM
     std::vector<UwbDeviceData> active_uwb_anchors;
     std::vector<BleDeviceData> target_ble_devices;
+    std::vector<uint8_t> calibration_anchors; //osobna lista kotwic do kalibracji lokalizacji
 
 public:
     AppDataManager();
@@ -32,10 +35,21 @@ public:
     int getActiveUwbAnchorCount() {
         return active_uwb_anchors.size();
     }   
-   uint8_t getUwbAnchorId(int index);
+    uint8_t getUwbAnchorId(int index);
 
-     std::vector<BleDeviceData> getTargetBleDevices() {
+    std::vector<BleDeviceData> getTargetBleDevices() {
         return target_ble_devices;
+    }
+
+    // --- Funkcje dla trybu kalibracji ---
+    std::vector<uint8_t> getCalibrationAnchors() {
+        std::lock_guard<std::mutex> lock(dataMutex);
+        return calibration_anchors;
+    }
+    
+    void clearCalibrationAnchors() {
+        std::lock_guard<std::mutex> lock(dataMutex);
+        calibration_anchors.clear();
     }
     // 1. GŁÓWNY PARSER (Rozcina "U:123;B:mac1,mac2")
     bool parseBlePayload(String payload);
