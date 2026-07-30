@@ -28,11 +28,21 @@ int scanTime = 2;
 NimBLEScan* pBLEScan;
 TaskHandle_t TaskNotifyHandle= NULL;
 TaskHandle_t TaskScanHandle=NULL;
+TaskHandle_t TaskUwbHandle = NULL; 
+
 // Tworzymy filtr: Max prędkość obiektu 3.0 m/s, odchudzamy strumień danych do aktualizacji co 300 ms (ok. 3Hz)
 std::vector<SmartUWBFilter> filters(8, SmartUWBFilter(3.0, 300)); // Jeden filtr na każdego aktywnego tag BLE
 
 
-
+// =========================================================================
+// NOWE: MASZYNA STANÓW (State Machine)
+// =========================================================================
+enum SystemMode {
+    MODE_IDLE,
+    MODE_NAVIGATION,
+    MODE_CALIBRATION
+};
+SystemMode currentMode = MODE_IDLE;
 
 // --- BLE CALLBACKS ---
 class MyServerCallbacks: public NimBLEServerCallbacks {
@@ -168,7 +178,58 @@ void TaskScan(void *pvParameters) {
 }
 
 // =========================================================================
-// 4. SETUP (Inicjalizacja SPI, UWB i BLE)
+//  FUNKCJE TRYBÓW (Odizolowana logika)
+// =========================================================================
+
+// Nasz nowy Krok 2 - tu będziemy pisać kalibrację
+void runCalibrationMode() {
+    Serial.println("\n[UWB-CORE1] 🛠 Start trybu autokalibracji...");
+    
+    // TODO: Zbudujemy tu pary i zmusimy kotwice do pomiaru!
+    delay(2000); // Na razie symulujemy, że to trwa 2 sekundy
+    
+    // Po zakończeniu wracamy do trybu IDLE (nasłuchu)
+    isCalibrationCommand = false;
+    currentMode = MODE_IDLE;
+    Serial.println("[UWB-CORE1] ✅ Kalibracja zakończona. Wracam do IDLE.\n");
+}
+
+// --- ZMIANA NAZWY: Twoja wielka pętla loop() nazywa się teraz runNavigationMode() ---
+void runNavigationMode() {
+  
+}
+
+// =========================================================================
+// 6. GŁÓWNY TASK UWB (Rdzeń 1) i PUSTY LOOP
+// =========================================================================
+void TaskUWB(void *pvParameters) {
+    for (;;) {
+        // 1. Zmiana trybu na żądanie (Zmienna z app_data.cpp)
+        if (isCalibrationCommand) {
+            currentMode = MODE_CALIBRATION;
+        } else if (appData.getActiveUwbAnchorCount() > 0) {
+            currentMode = MODE_NAVIGATION;
+        } else {
+            currentMode = MODE_IDLE;
+        }
+
+        // 2. Wykonywanie odpowiedniej logiki (CZYSTY KOD!)
+        switch (currentMode) {
+            case MODE_NAVIGATION:
+                runNavigationMode(); // Twój stary, dobry Ping-Pong
+                break;
+            case MODE_CALIBRATION:
+                runCalibrationMode(); // Nowa logika tworzenia par
+                break;
+            case MODE_IDLE:
+                vTaskDelay(200 / portTICK_PERIOD_MS); // Odpoczynek procesora
+                break;
+        }
+    }
+}
+
+// =========================================================================
+//  SETUP (Inicjalizacja SPI, UWB i BLE)
 // =========================================================================
 void setup() {
     Serial.begin(115200);
@@ -223,17 +284,29 @@ void setup() {
     pBLEScan->setInterval(100);
     pBLEScan->setWindow(70);
     
-    xTaskCreate(TaskNotify, "Notify_Task", 4096, NULL, 1, &TaskNotifyHandle);
-    xTaskCreate(TaskScan,   "Scan_Task",   4096, NULL, 1, &TaskScanHandle);
+  // --- ZMIANA: Przypisujemy taski BLE sztywno do rdzenia 0 (PRO_CPU) ---
+    xTaskCreatePinnedToCore(TaskNotify, "Notify_Task", 4096, NULL, 1, &TaskNotifyHandle, 0);
+    xTaskCreatePinnedToCore(TaskScan,   "Scan_Task",   4096, NULL, 1, &TaskScanHandle, 0);
+    
+    // --- NOWE: Tworzymy task UWB i przypisujemy sztywno do rdzenia 1 (APP_CPU) ---
+    xTaskCreatePinnedToCore(TaskUWB, "UWB_Task", 8192, NULL, 2, &TaskUwbHandle, 1);
+
 
     Serial.println("Gotowe! Czekam na telefon i Kotwice UWB...");
 }
 
-// =========================================================================
-// 5. MAIN LOOP (Zajmuje się tylko i wyłącznie UWB Ping-Pong!)
-// =========================================================================
+
+
+// Zabijamy domyślną pętlę Arduino. Systemem rządzi teraz w 100% FreeRTOS!
 void loop() {
-    // Odpytujemy każdą Kotwicę po kolei
+    vTaskDelete(NULL); 
+}
+
+// =========================================================================
+//old main loop -> move to runNavigationMode() 
+// =========================================================================
+/*void loop() {
+  
 
    // Odpytujemy każdą Kotwicę po kolei
     int anchorCount = appData.getActiveUwbAnchorCount();
@@ -416,3 +489,5 @@ void loop() {
    
     delay(500);
 }
+
+*/
