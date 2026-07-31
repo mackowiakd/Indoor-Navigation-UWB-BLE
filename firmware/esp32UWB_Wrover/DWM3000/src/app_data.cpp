@@ -165,7 +165,7 @@ String AppDataManager::getAggregatedData() {
     uint32_t current_time = millis(); // Pobieramy czas w tym ułamku sekundy
     const uint32_t TIMEOUT_MS = 2500; // 2.5 sekundy bez sygnału to śmierć taga
 
-    // 1. Sklejamy odległości Kotwic UWB (np. U_1=2.45;U_2=5.10;)
+    // 1. Sklejamy odległości Kotwic UWB (np. U_0x001=2.45;U_0x002=5.10;)
     for (const auto& anchor : active_uwb_anchors) {
         if (anchor.distance > 0)  //&& (current_time - anchor.last_seen_ms > TIMEOUT_MS))
         {
@@ -174,8 +174,8 @@ String AppDataManager::getAggregatedData() {
             snprintf(hexBuf, sizeof(hexBuf), "0x%04X", anchor.id);
             
             payload += "U_" + String(hexBuf) + "=" + String(anchor.distance, 2) + ";";
-            // %04X oznacza: "Wydrukuj jako HEX (X), użyj 4 znaków (4), brakujące uzupełnij zerami (0)"
-            Serial.printf("0x%04X ", anchor.id);
+    
+            Serial.printf("0x%04X ", anchor.id);  // %04X oznacza: "Wydrukuj jako HEX (X), użyj 4 znaków (4), brakujące uzupełnij zerami (0)"
         }
     }
     
@@ -183,7 +183,7 @@ String AppDataManager::getAggregatedData() {
         if (device.distance > 0) //&& (current_time - device.last_seen_ms > TIMEOUT_MS))
         {
             // Wysyłamy PEŁNY MAC. Używamy znaku '=' żeby oddzielić MAC od dystansu!
-            // Format docelowy: UWB:2.45;BLE_ff:ff:12:b1:64:d1=1.50
+            // Format docelowy: ;BLE_ff:ff:12:b1:64:d1=1.50
             payload += "B_" + String(device.mac.c_str()) + "=" + String(device.distance, 2)+ ";";
             Serial.printf("%s ", device.mac.c_str()); 
     }

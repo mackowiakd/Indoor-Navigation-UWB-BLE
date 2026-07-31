@@ -50,13 +50,13 @@ class MyServerCallbacks: public NimBLEServerCallbacks {
     void onDisconnect(NimBLEServer* pServer) { deviceConnected = false; Serial.println(">>> TELEFON ODŁĄCZONY! <<<"); }
 };
 
-//odbior listy urzadzen z  app 
+//odbior komend z apki mobilnej (lista urządzeń, tryb pracy, itp) 
 class MyWriteCallbacks: public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic* pCharacteristic) {
         std::string rxValue = pCharacteristic->getValue();
         if(rxValue.length() > 0) {
           
-          //UWAGA TO WTTW GDY TESTUJEMY Z nRF CONNECT -> wpisac z palca np U:0x0001,0x0002;B:a8:03:2a:b8:ee:fa
+          //UWAGA TO WTTW GDY TESTUJEMY Z nRF CONNECT -> wpisac z palca np U:0x0001,0x0002;B:a8:03:2a:b8:ee:fa || CALIB:0x0001,0x0002
 
            //APKA sama sklada odpowiedni format, więc tu wystarczy przekazać to co przyszło
             String payload = String(rxValue.c_str());
@@ -196,118 +196,7 @@ void runCalibrationMode() {
 
 // --- ZMIANA NAZWY: Twoja wielka pętla loop() nazywa się teraz runNavigationMode() ---
 void runNavigationMode() {
-  
-}
-
-// =========================================================================
-// 6. GŁÓWNY TASK UWB (Rdzeń 1) i PUSTY LOOP
-// =========================================================================
-void TaskUWB(void *pvParameters) {
-    for (;;) {
-        // 1. Zmiana trybu na żądanie (Zmienna z app_data.cpp)
-        if (isCalibrationCommand) {
-            currentMode = MODE_CALIBRATION;
-        } else if (appData.getActiveUwbAnchorCount() > 0) {
-            currentMode = MODE_NAVIGATION;
-        } else {
-            currentMode = MODE_IDLE;
-        }
-
-        // 2. Wykonywanie odpowiedniej logiki (CZYSTY KOD!)
-        switch (currentMode) {
-            case MODE_NAVIGATION:
-                runNavigationMode(); // Twój stary, dobry Ping-Pong
-                break;
-            case MODE_CALIBRATION:
-                runCalibrationMode(); // Nowa logika tworzenia par
-                break;
-            case MODE_IDLE:
-                vTaskDelay(200 / portTICK_PERIOD_MS); // Odpoczynek procesora
-                break;
-        }
-    }
-}
-
-// =========================================================================
-//  SETUP (Inicjalizacja SPI, UWB i BLE)
-// =========================================================================
-void setup() {
-    Serial.begin(115200);
-    delay(2000);
-    Serial.println("Startowanie systemu UWB + BLE...");
-
-    // Inicjalizacja magistrali SPI dla DW3000
-    spiBegin(PIN_IRQ, PIN_RST);
-    spiSelect(PIN_SS);
-    delay(2);
-
-    while (!dwt_checkidlerc()) {
-        Serial.println("IDLE FAILED");
-        while (1);
-    }
-    if (dwt_initialise(DWT_DW_INIT) == DWT_ERROR) {
-        Serial.println("INIT FAILED");
-        while (1);
-    }
     
-    dwt_setleds(DWT_LEDS_ENABLE | DWT_LEDS_INIT_BLINK);
-    if (dwt_configure(&config)) {
-        Serial.println("CONFIG FAILED");
-        while (1);
-    }
-
-    dwt_configuretxrf(&txconfig_options);
-    dwt_setrxantennadelay(RX_ANT_DLY);
-    dwt_settxantennadelay(TX_ANT_DLY);
-    dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
-
-    // Inicjalizacja BLE
-    BLEDevice::init("ESP32_UWB_DW3000");
-    BLEDevice::setMTU(512); // Pamiętaj o MTU!
-
-    pServer = BLEDevice::createServer();
-    pServer->setCallbacks(new MyServerCallbacks());
-    BLEService *pService = pServer->createService(SERVICE_UUID);
-    
-    pCharacteristic = pService->createCharacteristic(CHARACTERISTIC_UUID, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
-    pFilterCharacteristic = pService->createCharacteristic(FILTER_CHARACTERISTIC_UUID, NIMBLE_PROPERTY::WRITE);
-    pFilterCharacteristic->setCallbacks(new MyWriteCallbacks());
-
-    pService->start();
-    BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-    pAdvertising->addServiceUUID(SERVICE_UUID);
-    BLEDevice::startAdvertising();
-
-    pBLEScan = BLEDevice::getScan(); 
-    pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks(), true);
-    pBLEScan->setActiveScan(true);
-    pBLEScan->setInterval(100);
-    pBLEScan->setWindow(70);
-    
-  // --- ZMIANA: Przypisujemy taski BLE sztywno do rdzenia 0 (PRO_CPU) ---
-    xTaskCreatePinnedToCore(TaskNotify, "Notify_Task", 4096, NULL, 1, &TaskNotifyHandle, 0);
-    xTaskCreatePinnedToCore(TaskScan,   "Scan_Task",   4096, NULL, 1, &TaskScanHandle, 0);
-    
-    // --- NOWE: Tworzymy task UWB i przypisujemy sztywno do rdzenia 1 (APP_CPU) ---
-    xTaskCreatePinnedToCore(TaskUWB, "UWB_Task", 8192, NULL, 2, &TaskUwbHandle, 1);
-
-
-    Serial.println("Gotowe! Czekam na telefon i Kotwice UWB...");
-}
-
-
-
-// Zabijamy domyślną pętlę Arduino. Systemem rządzi teraz w 100% FreeRTOS!
-void loop() {
-    vTaskDelete(NULL); 
-}
-
-// =========================================================================
-//old main loop -> move to runNavigationMode() 
-// =========================================================================
-/*void loop() {
-  
-
    // Odpytujemy każdą Kotwicę po kolei
     int anchorCount = appData.getActiveUwbAnchorCount();
     
@@ -488,6 +377,118 @@ void loop() {
     }
    
     delay(500);
+  
+}
+
+// =========================================================================
+// 6. GŁÓWNY TASK UWB (Rdzeń 1) i PUSTY LOOP
+// =========================================================================
+void TaskUWB(void *pvParameters) {
+    for (;;) {
+        // 1. Zmiana trybu na żądanie (Zmienna z app_data.cpp)
+        if (isCalibrationCommand) {
+            currentMode = MODE_CALIBRATION;
+        } else if (appData.getActiveUwbAnchorCount() > 0) {
+            currentMode = MODE_NAVIGATION;
+        } else {
+            currentMode = MODE_IDLE;
+        }
+
+        // 2. Wykonywanie odpowiedniej logiki (CZYSTY KOD!)
+        switch (currentMode) {
+            case MODE_NAVIGATION:
+                runNavigationMode(); // Twój stary, dobry Ping-Pong
+                break;
+            case MODE_CALIBRATION:
+                runCalibrationMode(); // Nowa logika tworzenia par
+                break;
+            case MODE_IDLE:
+                vTaskDelay(200 / portTICK_PERIOD_MS); // Odpoczynek procesora
+                break;
+        }
+    }
+}
+
+// =========================================================================
+//  SETUP (Inicjalizacja SPI, UWB i BLE)
+// =========================================================================
+void setup() {
+    Serial.begin(115200);
+    delay(2000);
+    Serial.println("Startowanie systemu UWB + BLE...");
+
+    // Inicjalizacja magistrali SPI dla DW3000
+    spiBegin(PIN_IRQ, PIN_RST);
+    spiSelect(PIN_SS);
+    delay(2);
+
+    while (!dwt_checkidlerc()) {
+        Serial.println("IDLE FAILED");
+        while (1);
+    }
+    if (dwt_initialise(DWT_DW_INIT) == DWT_ERROR) {
+        Serial.println("INIT FAILED");
+        while (1);
+    }
+    
+    dwt_setleds(DWT_LEDS_ENABLE | DWT_LEDS_INIT_BLINK);
+    if (dwt_configure(&config)) {
+        Serial.println("CONFIG FAILED");
+        while (1);
+    }
+
+    dwt_configuretxrf(&txconfig_options);
+    dwt_setrxantennadelay(RX_ANT_DLY);
+    dwt_settxantennadelay(TX_ANT_DLY);
+    dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
+
+    // Inicjalizacja BLE
+    BLEDevice::init("ESP32_UWB_DW3000");
+    BLEDevice::setMTU(512); // Pamiętaj o MTU!
+
+    pServer = BLEDevice::createServer();
+    pServer->setCallbacks(new MyServerCallbacks());
+    BLEService *pService = pServer->createService(SERVICE_UUID);
+    
+    pCharacteristic = pService->createCharacteristic(CHARACTERISTIC_UUID, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
+    pFilterCharacteristic = pService->createCharacteristic(FILTER_CHARACTERISTIC_UUID, NIMBLE_PROPERTY::WRITE);
+    pFilterCharacteristic->setCallbacks(new MyWriteCallbacks());
+
+    pService->start();
+    BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+    pAdvertising->addServiceUUID(SERVICE_UUID);
+    BLEDevice::startAdvertising();
+
+    pBLEScan = BLEDevice::getScan(); 
+    pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks(), true);
+    pBLEScan->setActiveScan(true);
+    pBLEScan->setInterval(100);
+    pBLEScan->setWindow(70);
+    
+  // --- ZMIANA: Przypisujemy taski BLE sztywno do rdzenia 0 (PRO_CPU) ---
+    xTaskCreatePinnedToCore(TaskNotify, "Notify_Task", 4096, NULL, 1, &TaskNotifyHandle, 0);
+    xTaskCreatePinnedToCore(TaskScan,   "Scan_Task",   4096, NULL, 1, &TaskScanHandle, 0);
+    
+    // --- NOWE: Tworzymy task UWB i przypisujemy sztywno do rdzenia 1 (APP_CPU) ---
+    xTaskCreatePinnedToCore(TaskUWB, "UWB_Task", 8192, NULL, 2, &TaskUwbHandle, 1);
+
+
+    Serial.println("Gotowe! Czekam na telefon i Kotwice UWB...");
+}
+
+
+
+// Zabijamy domyślną pętlę Arduino. Systemem rządzi teraz w 100% FreeRTOS!
+void loop() {
+    vTaskDelete(NULL); 
+}
+
+// =========================================================================
+//old main loop -> move to runNavigationMode() 
+// =========================================================================
+/*void loop() {
+  
+
 }
 
 */
