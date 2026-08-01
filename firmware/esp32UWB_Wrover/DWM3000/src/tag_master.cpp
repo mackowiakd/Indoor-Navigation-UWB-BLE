@@ -109,7 +109,6 @@ class MyAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
                 isOurTag = true;
             }
         }
-
         // =================================================================
         // KROK 2: WERYFIKACJA PO PAYLOADZIE (Jeśli nazwa nie pasowała/brak nazwy)
         // =================================================================
@@ -132,7 +131,6 @@ class MyAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
         }
         }
             
-
             
     }
 };
@@ -178,23 +176,60 @@ void TaskScan(void *pvParameters) {
 }
 
 // =========================================================================
-//  FUNKCJE TRYBÓW (Odizolowana logika)
+//Logika kalibracji kotwic UWB (wysyłanie pingów między kotwicami)
 // =========================================================================
-
-// Nasz nowy Krok 2 - tu będziemy pisać kalibrację
 void runCalibrationMode() {
     Serial.println("\n[UWB-CORE1] 🛠 Start trybu autokalibracji...");
+
+    // 1. Pobieramy BEZPIECZNIE listę kotwic przeznaczonych do kalibracji
+    std::vector<uint8_t> calibList = appData.getCalibrationAnchors();
+    int n = calibList.size();
+
+    if (n < 2) {
+        Serial.println("[UWB-CORE1] ⚠️ Za mało kotwic do kalibracji! Prerywam.");
+        isCalibrationCommand = false;
+        currentMode = MODE_IDLE;
+        return;
+    }
+
+    // Zmienna do sklejania gotowej paczki dla telefonu (np. CALIB_RES:1_2=5.00;1_3=8.45;)
+    String mockResult = "CALIB_RES:";
+
+    // 2. Tworzymy UNIKALNE pary (j zaczyna się od i + 1)
+    for(int i = 0; i < n; i++) {
+        for(int j = i + 1; j < n; j++) { 
+            uint8_t anchor1 = calibList[i];
+            uint8_t anchor2 = calibList[j];
+
+            Serial.printf("[UWB-CORE1] 🔧 Kalibruję parę kotwic: 0x%02X <-> 0x%02X\n", anchor1, anchor2);
+
+            // TODO: W przyszłości tu będzie radiowe nadawanie ramki 'C','A','L' do anchor1
+            vTaskDelay(pdMS_TO_TICKS(400)); // Symulujemy, że pomiar zajmuje 400ms
+
+            // Generujemy wymyślony dystans (np. 5.0m + jakaś mała wariacja, żeby pary miały inne wyniki)
+            float mockDistance = 5.0f + (float)i + ((float)j * 0.5f); 
+
+            // Doklejamy do payloadu (Używamy HEX bez 0x dla oszczędności MTU)
+            mockResult += String(anchor1, HEX) + "_" + String(anchor2, HEX) + "=" + String(mockDistance, 2) + ";";
+        }
+    }
+
+    Serial.println("[UWB-CORE1] 📦 Zbudowano pakiet wynikowy: " + mockResult);
     
-    // TODO: Zbudujemy tu pary i zmusimy kotwice do pomiaru!
-    delay(2000); // Na razie symulujemy, że to trwa 2 sekundy
-    
-    // Po zakończeniu wracamy do trybu IDLE (nasłuchu)
+    // 3. TODO: Przekazanie mockResult na rdzeń 0 (do TaskNotify), aby poleciał przez BLE
+
+    vTaskDelay(pdMS_TO_TICKS(1000)); // Chwila oddechu przed resetem
+
+    // Po zakończeniu sprzątamy i wracamy do trybu IDLE (nasłuchu)
+    appData.clearCalibrationAnchors(); 
     isCalibrationCommand = false;
     currentMode = MODE_IDLE;
     Serial.println("[UWB-CORE1] ✅ Kalibracja zakończona. Wracam do IDLE.\n");
 }
 
-// --- ZMIANA NAZWY: Twoja wielka pętla loop() nazywa się teraz runNavigationMode() ---
+// =========================================================================
+//  OLD MAIN LOOP fun
+// =========================================================================
 void runNavigationMode() {
     
    // Odpytujemy każdą Kotwicę po kolei
@@ -360,7 +395,7 @@ void runNavigationMode() {
       
         //  Twarde wyczyszczenie wszystkich flag błędów z rejestru systemowego, 
         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK);
-        delay(60);     
+        vTaskDelay(pdMS_TO_TICKS(60));     
     }  
 
     // --- Rekonekcja BLE ---
@@ -376,7 +411,7 @@ void runNavigationMode() {
         lastReconnectCheck = millis();
     }
    
-    delay(500);
+    vTaskDelay(pdMS_TO_TICKS(500)); // Oddech dla procesora, żeby nie zjadał całego czasu CPU
   
 }
 
@@ -398,6 +433,7 @@ void TaskUWB(void *pvParameters) {
         switch (currentMode) {
             case MODE_NAVIGATION:
                 runNavigationMode(); // Twój stary, dobry Ping-Pong
+                vTaskDelay(pdMS_TO_TICKS(100));
                 break;
             case MODE_CALIBRATION:
                 runCalibrationMode(); // Nowa logika tworzenia par
@@ -477,18 +513,8 @@ void setup() {
 }
 
 
-
 // Zabijamy domyślną pętlę Arduino. Systemem rządzi teraz w 100% FreeRTOS!
 void loop() {
     vTaskDelete(NULL); 
 }
 
-// =========================================================================
-//old main loop -> move to runNavigationMode() 
-// =========================================================================
-/*void loop() {
-  
-
-}
-
-*/
