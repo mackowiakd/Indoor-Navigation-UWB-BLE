@@ -148,21 +148,21 @@ void TaskNotify(void *pvParameters) {
                 newFilterReceived = false;
             } else {
                 // TUTAJ ZBIERAMY DANE: UWB_dist jest na bieżąco aktualizowane przez DW3000 w pętli loop()!
-
-                // Wysyłamy do telefonu TYLKO jeśli zebraliśmy jakiś pomiar > 0
-                 String payload = appData.getAggregatedData();
-                if (payload.length() > 0) {
-                    pCharacteristic->setValue((uint8_t*)payload.c_str(), payload.length());
+                // 1. PRIORYTET: Sprawdzamy, czy mamy wyniki kalibracji do wysłania
+                String calibPayload = appData.getCalibrationResponse();
+                if (calibPayload.length() > 0) {
+                    pCharacteristic->setValue((uint8_t*)calibPayload.c_str(), calibPayload.length());
                     pCharacteristic->notify();
-                    Serial.println("[NOTIFY] Wysyłam dane do telefonu: " + payload);
-                }
-                //*** DANE Z Calibration mode (jesli !empty) ***
-                payload=appData.getCalibrationResponse();
-                if(payload.length()>0){
-                    pCharacteristic->setValue((uint8_t*)payload.c_str(), payload.length());
-                    pCharacteristic->notify();
-                    Serial.println("[NOTIFY] Wysyłam dane kalibracyjne do telefonu: " + payload);
-                   
+                    Serial.println("[NOTIFY] Wysyłam wynik KALIBRACJI: " + calibPayload);
+                } 
+                // 2. Jeśli nie ma kalibracji, wysyłamy zwykłą nawigację
+                else {
+                    String payload = appData.getAggregatedData();
+                    if (payload.length() > 0) {
+                        pCharacteristic->setValue((uint8_t*)payload.c_str(), payload.length());
+                        pCharacteristic->notify();
+                        // Serial.println("[NOTIFY] Wysyłam dane nawigacji...");
+                    }
                 }
              
             }
@@ -435,16 +435,10 @@ void runNavigationMode() {
             }
             // Wrzucamy do filtra i aktualizujemy appData!
         }
-        vTaskDelay(pdMS_TO_TICKS(60));
+     
     }
-    //co z czescia:
-    frame_seq_nb++; // inkrementacja numeru sekwencyjnego dla kolejnych cykli
-    
-    //  Twarde wyczyszczenie wszystkich flag błędów z rejestru systemowego, 
-    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK);
     vTaskDelay(pdMS_TO_TICKS(60)); 
-    // czy to ma byc tylko w runnaviagtion czy tutaj ? (ale to w orginalen wersji bylo wyw na koniec jednego cyklu kom uwb z kotwicami)
-    
+   // NIE ustawiamy tu MODE_IDLE, ponieważ nawigacja to proces ciągły! 
 }
 
 // =========================================================================
