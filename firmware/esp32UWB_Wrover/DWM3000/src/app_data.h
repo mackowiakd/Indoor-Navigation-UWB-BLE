@@ -28,8 +28,11 @@ private:
     std::vector<UwbDeviceData> active_uwb_anchors;
     std::vector<BleDeviceData> target_ble_devices;
     std::vector<uint8_t> calibration_anchors; //osobna lista kotwic do kalibracji lokalizacji
+    String calibration_response = "";
 
-public:
+    public:
+    void setCalibrationResponse(String res);
+    String getCalibrationResponse();
     AppDataManager();
 
     int getActiveUwbAnchorCount() {
@@ -46,6 +49,7 @@ public:
         std::lock_guard<std::mutex> lock(dataMutex);
         return calibration_anchors;
     }
+    
     
     void clearCalibrationAnchors() {
         std::lock_guard<std::mutex> lock(dataMutex);

@@ -158,7 +158,7 @@ void AppDataManager::updateUwbDistance(uint8_t anchorId, float newDist) {
     }
 };
 
-/*used by TaskNotify() to prepare payload for smartphone*/
+/*  used by TaskNotify() to prepare payload for smartphone  */
 String AppDataManager::getAggregatedData() {
     String payload = "";
     std::lock_guard<std::mutex> lock(dataMutex);
@@ -242,6 +242,8 @@ uint8_t AppDataManager::getUwbAnchorId(int index) {
     return 0;
 }
 
+ 
+
 void AppDataManager::markUwbAnchorDead(uint8_t anchorId) {
     std::lock_guard<std::mutex> lock(dataMutex);
     for (auto& anchor : active_uwb_anchors) {
@@ -267,4 +269,15 @@ void AppDataManager::incrementUwbError(uint8_t anchorId) {
             return;
         }
     }
+}
+
+void AppDataManager::setCalibrationResponse(String res) {
+    std::lock_guard<std::mutex> lock(dataMutex);
+    calibration_response = res;
+}
+String AppDataManager::getCalibrationResponse() {
+    std::lock_guard<std::mutex> lock(dataMutex);
+    String temp = calibration_response;
+    calibration_response = ""; // Czyścimy po przeczytaniu
+    return temp;
 }
