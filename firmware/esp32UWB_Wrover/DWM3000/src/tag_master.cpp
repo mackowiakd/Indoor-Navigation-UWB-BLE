@@ -237,10 +237,11 @@ void runCalibrationMode() {
             mockResult += String(anchor1, HEX) + "_" + String(anchor2, HEX) + "=" + String(mockDistance, 2) + ";";
             
         }
-        appData.setCalibrationResponse(mockResult); // Przekazujemy na rdzeń 0
-        currentMode = MODE_IDLE;
+     
         
     }
+    // Przekazujemy gotowy paczkę na rdzeń 0 po zakończeniu pętli!
+    appData.setCalibrationResponse(mockResult); 
 
     Serial.println("[UWB-CORE1] pakiet wynikowy: " + mockResult);
     // 3. TODO: Przekazanie mockResult na rdzeń 0 (do TaskNotify), aby poleciał przez BLE
