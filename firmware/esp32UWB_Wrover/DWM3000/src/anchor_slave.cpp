@@ -223,6 +223,26 @@ void loop() {
         Serial.println("[KOTWICA][BŁĄD] Uszkodzona fizycznie fala radiowa (szum).");
     }
 
+    //CALIBRATION MODE
+    /*else if (rx_buffer[5] == 'C' && rx_buffer[6] == 'A' && rx_buffer[7] == 'L') {
+        // ==========================================
+        // TRYB KALIBRACJI: Tag kazał mi zmierzyć kolegę!
+        // ==========================================
+        Serial.println("🛠 Dostałem rozkaz kalibracji! Zmieniam się w Inicjatora!");
+        
+        uint8_t target_anchor_id = rx_buffer[10]; // Wyciągamy ID Kotwicy 2
+        
+        // 1. Kotwica 1 WYKONUJE DOKŁADNIE TEN SAM KOD CO ESP32-TAG!
+        // Wysyła 'P','O','L' do Kotwicy 2, odbiera 'R','E','S','P', wysyła 'F','I','N'
+        float distance_to_anchor_2 = perform_twr_as_initiator(target_anchor_id);
+        
+        // 2. Po udanym pomiarze (np. wyszło 8.45m), Kotwica 1 musi 
+        // odesłać ten wynik z powrotem do ESP32-Taga!
+        send_calibration_report_to_tag(distance_to_anchor_2);
+        
+        Serial.println("✅ Pomiar wykonany i odesłany. Wracam do bycia Kotwicą (Slave).");
+    }*/
+
 };
                        
         

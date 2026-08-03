@@ -25,6 +25,7 @@ bool oldDeviceConnected = false;
 volatile bool newFilterReceived = false;
 
 int scanTime = 2;
+// Uchwyty do zadań FreeRTOS
 NimBLEScan* pBLEScan;
 TaskHandle_t TaskNotifyHandle= NULL;
 TaskHandle_t TaskScanHandle=NULL;
@@ -136,7 +137,7 @@ class MyAdvertisedDeviceCallbacks: public NimBLEAdvertisedDeviceCallbacks {
 };
 
 // =========================================================================
-// 3. FREERTOS TASKS (BLE)
+// 3. FREERTOS TASKS (BLE) core 0
 // =========================================================================
 void TaskNotify(void *pvParameters) {
     for (;;) {
@@ -147,7 +148,7 @@ void TaskNotify(void *pvParameters) {
                 pCharacteristic->notify();
                 newFilterReceived = false;
             } else {
-                // TUTAJ ZBIERAMY DANE: UWB_dist jest na bieżąco aktualizowane przez DW3000 w pętli loop()!
+            
                 // 1. PRIORYTET: Sprawdzamy, czy mamy wyniki kalibracji do wysłania
                 String calibPayload = appData.getCalibrationResponse();
                 if (calibPayload.length() > 0) {
@@ -167,7 +168,7 @@ void TaskNotify(void *pvParameters) {
              
             }
         }
-        // --- PRZENIESIONA REKONEKCJA BLE ---
+        // --- REKONEKCJA BLE (dziala w tle) ---
         static unsigned long lastReconnectCheck = 0;
         if (millis() - lastReconnectCheck > 500) {
             if (!deviceConnected && oldDeviceConnected) {
@@ -228,8 +229,10 @@ void runCalibrationMode() {
             // Generujemy wymyślony dystans (np. 5.0m + jakaś mała wariacja, żeby pary miały inne wyniki)
             float mockDistance = 5.0f + (float)i + ((float)j * 0.5f); 
           
+            //REAL implem: (after testing)
             // float dist = executeTWR(anchor1, anchor2, true); chyba powinna miec 2 arg, kogo pingujemy i destynacje!
             // vTaskDelay(pdMS_TO_TICKS(100));
+            //finalRes => string(anchorI + anchorJ = dis)   
             
             mockResult += String(anchor1, HEX) + "_" + String(anchor2, HEX) + "=" + String(mockDistance, 2) + ";";
             
@@ -250,7 +253,9 @@ void runCalibrationMode() {
     currentMode = MODE_IDLE;
     Serial.println("[UWB-CORE1] ✅ Kalibracja zakończona. Wracam do IDLE.\n");
 }
-// --- UNIWERSALNA FUNKCJA do kom UWB ---
+// =========================================================================
+// 5. UNIWERSALNA FUNKCJA UWB (TWR - Two Way Ranging)
+// =========================================================================
 
 float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibrationMode) {
     float received_distance = -1.0; // Domyślnie ustawiamy na -1.0, co oznacza błąd (timeout lub brak odpowiedzi)
@@ -268,17 +273,16 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibratio
     tx_final_msg[7]  = target_anchor; // Do kogo wysyłam FINAL (Kotwica)
     tx_report_msg[7] = target_anchor; // Od kogo czekam na raport (Kotwica)
 
-    // Numerujemy ramkę i inkrementujemy od razu na przyszłość
-    tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
-    frame_seq_nb++;
 
-    // TWOJE ID TAGA NA INDEKSIE 8 (Zawsze równe 1)
+
+    // ID TAGA NA INDEKSIE 8 (Zawsze równe 1)
     rx_resp_msg[8]   = 1;
     tx_final_msg[8]  = 1;
     tx_report_msg[8] = 1;
 
     // KROK 1: Wysyłamy wiadomość POLL
     tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
+    frame_seq_nb++; //inkrementacja numeru paczki 
     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
     dwt_writetxdata(sizeof(tx_poll_msg), tx_poll_msg, 0);
     dwt_writetxfctrl(sizeof(tx_poll_msg), 0, 1); 
