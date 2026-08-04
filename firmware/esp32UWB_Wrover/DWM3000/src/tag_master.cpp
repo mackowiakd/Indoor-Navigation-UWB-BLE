@@ -297,7 +297,7 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibratio
 
     // Czekamy na odpowiedź RESP od Tagu
     while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
-    taskYIELD();  //for tag
+    taskYIELD();  //oddaje procesor zadaniom z tym samym lub wyższym priorytetem (
     }
     // 2. Coś przyleciało do anteny! -> zmiana na TAG initialized TWR czyli my pytamy 
     //po ID z naszej listy urządzeń docelowych (np. POLL do 0x0001)
@@ -395,57 +395,33 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibratio
 //  OLD MAIN LOOP fun
 // =========================================================================
 void runNavigationMode() {
-    int anchorCount = appData.getActiveUwbAnchorCount();
+     int anchorCount = appData.getActiveUwbAnchorCount();
+    
     for (int i = 0; i < anchorCount; i++) {
         uint8_t target_id = appData.getUwbAnchorId(i);
+        if (target_id == 0) continue;
         
-        // Strzelamy (false, bo to nie kalibracja)
+        // CZYSTY STRZAŁ (false = to nie jest kalibracja)
         float dist = executeTWR(target_id, target_id, false); 
         
-        if (dist > 0) {
-
-               // I gotowe! Możemy to wrzucić do naszego filtra SmartUWBFilter!
-            
+        if (dist > 0.0 && dist < 100.0) {
+            // Wygładzanie odczytów filtrem kinematycznym
             if (i >= filters.size()) {
-                filters.emplace_back(3.0, 300); // Jeśli z jakiegoś powodu mamy więcej kotwic niż filtrów, tworzymy nowy filtr "w locie"   
+                filters.emplace_back(3.0, 300); 
             }
-            filters[i].addRawMeasurement(dist); // dodajemy do odpowiedniego filtra dla tej kotwicy 
+            filters[i].addRawMeasurement(dist); 
 
-        
-            // ---TO ZOSTAJE NA TAGU  ---
-            if (dist > 0.0 && dist < 100.0) {
-                
-                
-                // 2. Sprawdzamy, czy zebrało się wystarczająco poprawnych danych i minął zadany czas
-                float clean_distance;
-                if (filters[i].isReadyToReport(clean_distance)) {
-
-                    Serial.print("[TAG] UWB Dystans do Kotwicy z id");
-                    Serial.print(target_id);
-                    Serial.print(": ");
-                    Serial.println(clean_distance);
-                    Serial.println("\n");
-
-                    // 3. TUTAJ AKTUALIZUJESZ ZMIENNĄ DLA BLUETOOTHA!
-                    appData.updateUwbDistance(target_id, clean_distance);
-                    
-                }
-                else {
-                    
-                    Serial.println("[TAG] UWB filter not ready (not enough data).");
-
-                }
-            }else {
-                Serial.println("[TAG] Błąd fizyki! Surowy dystans poza zakresem 0-100m.");
+            float clean_distance;
+            if (filters[i].isReadyToReport(clean_distance)) {
+                // TUTAJ AKTUALIZACJA ZMIENNEK DLA BLUETOOTHA!
+                appData.updateUwbDistance(target_id, clean_distance);
             }
-            // Wrzucamy do filtra i aktualizujemy appData!
         }
-     
+        
+        // MAŁY ODDECH DLA PROCESORA PO KAŻDYM STRZALE! (Eliminuje dławienie BLE)
+        vTaskDelay(pdMS_TO_TICKS(60)); 
     }
-    vTaskDelay(pdMS_TO_TICKS(60)); 
-   // NIE ustawiamy tu MODE_IDLE, ponieważ nawigacja to proces ciągły! 
 }
-
 // =========================================================================
 // 6. GŁÓWNY TASK UWB (Rdzeń 1) i PUSTY LOOP
 // =========================================================================

@@ -6,7 +6,7 @@
 
 #define MAX_UWB_ANCHORS 10
 
-static bool isCalibrationCommand=0; //bez static mam error multiple definition of `isCalibrationCommand' in app_data.cpp and tag_master.cpp
+extern bool isCalibrationCommand; //bez static mam error multiple definition of `isCalibrationCommand' in app_data.cpp and tag_master.cpp
 
 // Struktura trzymająca adres MAC i jego aktualny dystans
 //Prawdop wymaga MUTEXA dla asyn task BLE

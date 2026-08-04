@@ -9,6 +9,7 @@ Znak = -> "Aha, to jest pomiar, wrzucam do bazy danych".
 */
 #include "app_data.h"
 
+bool isCalibrationCommand = false; // Globalna flaga, która sygnalizuje TaskUWB, że mamy tryb kalibracji
 // Inicjalizacja globalnej instancji
 AppDataManager appData;
 
