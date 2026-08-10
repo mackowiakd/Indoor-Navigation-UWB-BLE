@@ -8,66 +8,7 @@
  *  z Taga
  * 
  */
-#include <Arduino.h>
-#include <DW3000.h>
-
-
-// =========================================================================
-// 1. PINY WROVER
-// =========================================================================
-const uint8_t PIN_RST = 27;
-const uint8_t PIN_IRQ = 34;
-const uint8_t PIN_SS = 4;
-
-static dwt_config_t config = {
-  5, DWT_PLEN_128, DWT_PAC8, 9, 9, 1, DWT_BR_6M8, DWT_PHRMODE_STD, DWT_PHRRATE_STD, 
-  (129 + 8 - 8), DWT_STS_MODE_OFF, DWT_STS_LEN_64, DWT_PDOA_M0
-};
-#define TX_ANT_DLY 16385
-#define RX_ANT_DLY 16385
-#define DID 1       // ID tej konkretnej kotwicy (np. 2)
-#define TAG_ID 1    // ID Taga, z którym testujemy układ (w przyszłości Kotwica sama to odczyta z POLLa!)
-
-// Indeksy:                       0     1   2    3     4    5    6    7       8       9
-static uint8_t rx_poll_msg1[]  = {0x41, 0x88, 0, 0xCA, 0xDE, 'P', 'O', 'L',   DID,    0x21, 0, 0};
-static uint8_t tx_resp_msg1[]  = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'E',  DID,  TAG_ID, 0x10, 0x02, 0, 0, 0, 0};
-static uint8_t rx_final_msg1[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'F', 'I',  DID,  TAG_ID, 0x23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-
-// Zauważ, że tu usunąłem '2', '2' i wstawiłem czyste zmienne!
-static uint8_t tx_report_msg[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'P',  DID,  TAG_ID, 0x40, 0, 0, 0, 0, 0, 0, 0};
-
-#define REPORT_MSG_DIST_IDX 11 // Cale miejsce od indeksu 11 jest czyste na naszego Floata!
-#define ALL_MSG_COMMON_LEN 10
-#define ALL_MSG_SN_IDX 2
-#define FINAL_MSG_POLL_TX_TS_IDX 10
-#define FINAL_MSG_RESP_RX_TS_IDX 14
-#define FINAL_MSG_FINAL_TX_TS_IDX 18
-static uint8_t frame_seq_nb = 0;
-#define RX_BUF_LEN 24
-static uint8_t rx_buffer[RX_BUF_LEN];
-static uint32_t status_reg = 0;
-#define POLL_RX_TO_RESP_TX_DLY_UUS 2500
-#define RESP_TX_TO_FINAL_RX_DLY_UUS 150// no blind window after sending resp
-#define FINAL_RX_TIMEOUT_UUS 8000 // dajmy Kotwicy BARDZO DUŻO czasu na matematykę przed FINALem
-#define PRE_TIMEOUT 0
-//master conifg
-static uint8_t tx_poll_msg[]   = {0x41, 0x88, 0, 0xCA, 0xDE, 'X', 'X', 'X', 0, 0x21, 0, 0}; //POL or CAL 
-static uint8_t rx_resp_msg[]   = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'E', 0, TAG_ID, 0x10, 0x02, 0, 0, 0, 0};
-static uint8_t tx_final_msg[]  = {0x41, 0x88, 0, 0xCA, 0xDE, 'F', 'I', 0, TAG_ID, 0x23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-static uint8_t tx_report_msg[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'P', 0, TAG_ID, 0x40, 0, 0, 0, 0, 0, 0, 0};
-#define REPORT_MSG_DIST_IDX 11 // Cale miejsce od indeksu 11 jest czyste na naszego Floata!
-// PARAMETRY CZASOWE KOTWICY -> tag init (z taga przeklejone)
-#define POLL_TX_TO_RESP_RX_DLY_UUS 150   // Zmienione z 0 na 150: Dajmy chipowi ułamek mikrosekundy na przejście w nasłuch
-#define RESP_RX_TIMEOUT_UUS 3000         // Timeout 3ms zostaje (zabezpieczenie)
-#define RESP_RX_TO_FINAL_TX_DLY_UUS 4000 // dajmy Kotwicy BARDZO DUŻO czasu na matematykę przed FINALem
-#define RESP_delay 8000 //czekamy 
-
-static uint64_t poll_rx_ts, resp_tx_ts, final_rx_ts;
-static double tof, distance;
-
-extern dwt_txconfig_t txconfig_options;
-
-
+#include "anchor_slave.h"
 
 // anchor slave (poll resp)
 void handle_normal_poll(uint8_t sender_id, uint32_t frame_len) {
@@ -167,15 +108,13 @@ float executeTWR(uint8_t target_anchor) {
     
     // tryb poll musi byc juz ustawiony w dispacherze (loop)
   
-
     tx_poll_msg[8]   = target_anchor; // Kogo wołam (Kotwica)
     rx_resp_msg[7]   = target_anchor; // Od kogo czekam na odp (Kotwica)
     tx_final_msg[7]  = target_anchor; // Do kogo wysyłam FINAL (Kotwica)
     tx_report_msg[7] = target_anchor; // Od kogo czekam na raport (Kotwica)
 
 
-
-    // ID TAGA NA INDEKSIE 8 (Zawsze równe 1)
+    // ID kotwicy nadawajacej 
     rx_resp_msg[8]   = DID;
     tx_final_msg[8]  = DID;
     tx_report_msg[8] = DID;
@@ -267,24 +206,50 @@ float executeTWR(uint8_t target_anchor) {
                         Serial.println("[TAG] Odebrano REPORT od Kotwicy! Rozpakowuję...");
                         memcpy(&received_distance, &rx_buffer[REPORT_MSG_DIST_IDX], 4);
                       
-                    } else {
-                       
-                    }
-                } else {
+                    } 
+                } 
+                else {
                     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
-                     }
-            } else {
                 }
-        } else {
-              }
+            } 
+        } 
     } else {
-        dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
-        
+        dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);   
     };
 
    // --- SPRZĄTANIE (Niezależnie czy sukces, czy błąd) ---
     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK);
     return received_distance; // Zwracamy zmierzoną odległość (lub -1.0 jeśli był błąd)
+}
+
+void send_calib_result_to_tag(uint8_t tag_id, uint8_t target_anchor_id, float distance) {
+    // 1. Tworzymy nową ramkę. 
+    // Zamiast POL, RES, FIN, nazywamy ją 'C', 'R', 'S' (Calibration Result)
+    // rx_buffer:       0     1  2     3     4    5    6    7      8               9    10+ (Float)
+    uint8_t tx_crs_msg[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'C', 'R', 'S', tag_id, target_anchor_id, 0, 0, 0, 0, 0, 0};
+
+    // 2. Wrzucamy nasz wynik kalibracji (float) do paczki
+    uint8_t *dist_bytes = (uint8_t*)&distance;
+    tx_crs_msg[10] = dist_bytes[0];
+    tx_crs_msg[11] = dist_bytes[1];
+    tx_crs_msg[12] = dist_bytes[2];
+    tx_crs_msg[13] = dist_bytes[3];
+
+    // 3. Numerujemy paczkę
+    tx_crs_msg[2] = frame_seq_nb++;
+
+    // 4. Załadowanie do anteny (0 na końcu oznacza zwykłe dane, bez stempli czasowych TWR!)
+    dwt_writetxdata(sizeof(tx_crs_msg), tx_crs_msg, 0);
+    dwt_writetxfctrl(sizeof(tx_crs_msg), 0, 0);
+
+    Serial.printf("[KOTWICA-MASTER] Wysyłam wynik kalibracji (%.2fm) do Taga...\n", distance);
+
+    // 5. Wysylka (IMMEDIATE - bez czekania na odpowiedź)
+    if (dwt_starttx(DWT_START_TX_IMMEDIATE) == DWT_SUCCESS) {
+        // fire and forget
+        while (!(dwt_read32bitreg(SYS_STATUS_ID) & SYS_STATUS_TXFRS_BIT_MASK)) {};
+        dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
+    }
 }
 // anchor master (tag impostor)
 void handle_calibration_delegation(uint8_t target_anchor_id, uint8_t tag_id) {
@@ -295,10 +260,10 @@ void handle_calibration_delegation(uint8_t target_anchor_id, uint8_t tag_id) {
     // Wysyłam 'POL' do target_anchor_id (bo Kotwica 2 zareaguje na to automatycznie!)
     float distance_to_peer = executeTWR(target_anchor_id);
     
-    // 2. Odsyłam specjalny raport do ESP32, żeby wiedział, że skończyłam misję
-   // send_calib_result_to_tag(tag_id, target_anchor_id, distance_to_peer);
+    // 2. Odsyłam  raport do ESP32 wyniki
+    send_calib_result_to_tag(tag_id, target_anchor_id, distance_to_peer);
     
-    // 3. Funkcja się kończy, wracam do nasłuchu jako Pasywny Sługa.
+    // 3. Funkcja się kończy, wracam do nasluchu.
 }
 
 // =========================================================================
@@ -340,14 +305,13 @@ void setup() {
 
 
 // =========================================================================
-// 5. MAIN LOOP (Zajmuje się tylko i wyłącznie UWB Ping-Pong!)
+// 5. MAIN LOOP dipatcher (nasłuchuje i reaguje na POLL i CAL)
 // =========================================================================
 void loop() {
+
     dwt_setpreambledetecttimeout(0);
     dwt_setrxtimeout(0);
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
-
-    
 
     // 1. Zabezpieczona pętla nasłuchu - czekamy, aż coś przyleci do anteny (POLL od Taga)
     while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_ERR))) {
@@ -355,7 +319,6 @@ void loop() {
     };
 
     // 2. Coś przyleciało do anteny! -> zmiana na TAG initialized TWR czyli my pytamy 
-    //po ID z naszej listy urządzeń docelowych (np. POLL do 0x0001)
 
     if (status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
         uint32_t frame_len;
