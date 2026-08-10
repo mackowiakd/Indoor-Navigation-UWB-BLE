@@ -16,7 +16,8 @@ void handle_normal_poll(uint8_t sender_id, uint32_t frame_len) {
     // 2. Czeka na FIN
     // 3. Odsyła REPORT do sender_id
     //stary kod slave z loop
-     uint32_t resp_tx_time1;
+    uint32_t resp_tx_time1;
+    uint32_t local_status_reg = 0;
 
     poll_rx_ts = get_rx_timestamp_u64();
     resp_tx_time1 = (poll_rx_ts + (POLL_RX_TO_RESP_TX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;
@@ -40,9 +41,9 @@ void handle_normal_poll(uint8_t sender_id, uint32_t frame_len) {
         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
         
         // ---- ETAP 2: CZEKAMY NA FINAL OD TAGA ----
-        while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {};
+        while (!((local_status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {};
 
-        if (status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
+        if (local_status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
             dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
             frame_len = dwt_read32bitreg(RX_FINFO_ID) & FRAME_LEN_MAX_EX;
             if (frame_len <= RX_BUF_LEN) {
@@ -107,7 +108,7 @@ float executeTWR(uint8_t target_anchor) {
     float received_distance = -1.0; // Domyślnie ustawiamy na -1.0, co oznacza błąd (timeout lub brak odpowiedzi)
     
     // tryb poll musi byc juz ustawiony w dispacherze (loop)
-  
+    uint32_t local_status_reg = 0;
     tx_poll_msg[8]   = target_anchor; // Kogo wołam (Kotwica)
     rx_resp_msg[7]   = target_anchor; // Od kogo czekam na odp (Kotwica)
     tx_final_msg[7]  = target_anchor; // Do kogo wysyłam FINAL (Kotwica)
@@ -134,13 +135,13 @@ float executeTWR(uint8_t target_anchor) {
     dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
 
     // Czekamy na odpowiedź RESP od Tagu
-    while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
+    while (!((local_status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
     taskYIELD();  //oddaje procesor zadaniom z tym samym lub wyższym priorytetem (
     }
     // 2. Coś przyleciało do anteny! -> zmiana na TAG initialized TWR czyli my pytamy 
     //po ID z naszej listy urządzeń docelowych (np. POLL do 0x0001)
 
-    if (status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
+    if (local_status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
         uint32_t frame_len;
         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
         Serial.println("[TAG] Odebrano odpowiedź! Sprawdzam, czy to RESP...");
@@ -189,12 +190,11 @@ float executeTWR(uint8_t target_anchor) {
                 Serial.println("[TAG] Czekam na REPORT od Kotwicy...");
                 
                 // 3. CZEKAMY NA PACZKĘ "REPORT" OD KOTWICY!
-                while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
+                while (!((local_status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
                     
                 };
 
-                if (status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
-                
+                if (local_status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
                     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
                     frame_len = dwt_read32bitreg(RX_FINFO_ID) & FRAME_LEN_MAX_EX;
                     dwt_readrxdata(rx_buffer, frame_len, 0);
@@ -312,6 +312,7 @@ void loop() {
     dwt_setpreambledetecttimeout(0);
     dwt_setrxtimeout(0);
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
+    uint32_t status_reg = 0;
 
     // 1. Zabezpieczona pętla nasłuchu - czekamy, aż coś przyleci do anteny (POLL od Taga)
     while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_ERR))) {
