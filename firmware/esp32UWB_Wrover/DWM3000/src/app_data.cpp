@@ -136,7 +136,7 @@ void AppDataManager::updateBleDistance(const std::string& mac, float newDist, fl
     std::lock_guard<std::mutex> lock(dataMutex);
     for (auto& device : target_ble_devices) {
         if (device.mac == mac) {
-            device.last_seen_ms = millis();
+            device.last_seen_ms = millis(); // ok ale my chyba nigdy nie sprawdzamy ile faktycznie czasu minelo (is alive?)
             if (device.distance < 0) {
                 device.distance = newDist; // Pierwszy strzał pomiaru
             } else {
@@ -180,18 +180,18 @@ String AppDataManager::getAggregatedData() {
         }
     }
     
-    for (const auto& device : target_ble_devices) {
-        if (device.distance > 0) //&& (current_time - device.last_seen_ms > TIMEOUT_MS))
-        {
-            // Wysyłamy PEŁNY MAC. Używamy znaku '=' żeby oddzielić MAC od dystansu!
+    for (auto& device : target_ble_devices) {
+        if((device.distance > 0) && (current_time - device.last_seen_ms > TIMEOUT_MS)) {
+            device.distance = -1.0f;
+        }
+        if (device.distance > 0) {
             // Format docelowy: ;BLE_ff:ff:12:b1:64:d1=1.50
             payload += "B_" + String(device.mac.c_str()) + "=" + String(device.distance, 2)+ ";";
             Serial.printf("%s ", device.mac.c_str()); 
+        }
     }
     Serial.println("\n");
        
-     
-    }
     return payload;
 }
 
