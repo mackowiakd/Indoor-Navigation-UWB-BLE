@@ -23,8 +23,6 @@ class NavigationRoutingEngine(
 
     private var currentTarget: NavigationTarget? = null // Dokąd idę?
 
-
-
     private var lastPassAnnouncementTimeMs: Long = 0
     private val PASSING_THRESHOLD_METERS = 2.0
     private val ANNOUNCEMENT_COOLDOWN_MS = 8000

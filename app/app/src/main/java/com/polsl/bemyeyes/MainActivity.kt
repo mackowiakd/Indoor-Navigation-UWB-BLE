@@ -143,37 +143,66 @@ class MainActivity : ComponentActivity() {
                         // --- NOWE: Wpinamy logikę wywołania kalibracji ---
                         onCalibrateZoneClick = { locationId ->
                             if (locationId != null) {
-                                debugLogs.add(0, "🛠 [ADMIN] Uruchamiam Auto-Kalibrację dla strefy $locationId")
+                                appToEspLogs.add(0, "🛠 [ADMIN] Uruchamiam Auto-Kalibrację dla strefy $locationId")
 
-                                // 1. Wyciągamy z bazy tylko UWB Anchory dla tej strefy
                                 val zoneAnchors = topologyDatabase.getDevicesForLocation(locationId)
                                     .filter { it.deviceType == "UWB_ANCHOR" }
 
                                 if (zoneAnchors.size >= 2) {
-                                    // 2. TODO: Tutaj ESP32 powinno zrobić ping-pong między kotwicami.
-                                    // Na ten moment MOKUJEMY wynik, żeby zobaczyć, czy działa
+                                    /* TODO: Tutaj ESP32 powinno zrobić ping-pong między kotwicami. steps:
+                                     * 1 blemanager send calib comm
+                                     * 2 perform mock calc- veryfies app logic
+                                     * 3 blemanager actually recieve data from esp , then calls calib class to handle (with reall data this time)
+                                    */
+                                    // MOKUJEMY wynik, żeby zobaczyć, czy działa ->
                                     val mockDistanceMatrix = arrayOf(
-                                        doubleArrayOf(0.0, 8.45), // Odległość Kotwica 1 -> Kotwica 2 (8.45m)
-                                        doubleArrayOf(8.45, 0.0)
+                                        doubleArrayOf(0.0, 11.45), // Odległość Kotwica 1 -> Kotwica 2 (8.45m)
+                                        doubleArrayOf(11.15, 0.0)
                                     )
-
                                     try {
                                         val calibratedAnchors = autoCalibrationEngine.performCalibration(mockDistanceMatrix, zoneAnchors)
 
-                                        debugLogs.add(0, "✅ Kalibracja Zakończona!")
+                                        appToEspLogs.add(0, "✅ Kalibracja Zakończona!")
                                         calibratedAnchors.forEach {
-                                            debugLogs.add(0, "📍 Kotwica ${it.macAddress} otrzymała kordynaty: X=${it.globalX}, Y=${it.globalY}")
+                                            appToEspLogs.add(0, "📍 Kotwica ${it.macAddress} otrzymała kordynaty: X=${it.globalX}, Y=${it.globalY}")
                                             // TODO: W przyszłości zrobimy tu zapytanie do bazy (Retrofit PATCH),
+                                            scope.launch {
+                                                try {
+                                                    // 1. Pakujemy tylko X i Y do zaktualizowania
+                                                    val updatePayload = mapOf(
+                                                        "global_x" to (it.globalX ?: 0.0),
+                                                        "global_y" to (it.globalY ?: 0.0)
+                                                    )
+
+                                                    // 2. Wysyłamy żądanie PATCH (pamiętaj o doklejeniu "eq." wymaganego przez PostgREST)
+                                                    val response= RetrofitClient.apiService.updateDeviceCoordinates(
+                                                        "eq.${it.macAddress}",
+                                                        updatePayload
+                                                    )
+                                                    if (response.isSuccessful) {
+                                                        appToEspLogs.add(0, "☁️ Pomyślnie zaktualizowano DB dla: ${it.macAddress}")
+                                                    } else {
+                                                        appToEspLogs.add(0, "❌ Odrzucono zapis dla ${it.macAddress}. Kod błędu: ${response.code()}")
+                                                    }
+
+
+                                                } catch (e: Exception) {
+                                                    appToEspLogs.add(
+                                                        0,
+                                                        "❌ Błąd zapisu DB dla ${it.macAddress}: ${e.message}"
+                                                    )
+                                                }
+                                            }
                                             // żeby wysłać nowe koordynaty z powrotem na serwer.
                                         }
                                     } catch (e: Exception) {
-                                        debugLogs.add(0, "❌ Błąd kalibracji: ${e.message}")
+                                        appToEspLogs.add(0, "❌ Błąd kalibracji: ${e.message}")
                                     }
                                 } else {
-                                    debugLogs.add(0, "❌ Za mało kotwic w strefie do kalibracji (wymagane min. 2)")
+                                    appToEspLogs.add(0, "❌ Za mało kotwic w strefie do kalibracji (wymagane min. 2)")
                                 }
                             } else {
-                                debugLogs.add(0, "❌ Najpierw musisz wejść do jakiejś strefy (Cold Start)!")
+                                appToEspLogs.add(0, "❌ Najpierw musisz wejść do jakiejś strefy (Cold Start)!")
                             }
                         }
 
