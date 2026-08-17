@@ -75,6 +75,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        bleManager.onCalibrationResultReceived = { rawData ->
+            runOnUiThread {
+                autoCalibrationEngine.processCalibrationData(rawData) // Wywołuje funkcję z Kroku 2
+            }
+        }
         // W MainActivity.kt
         lifecycleScope.launch {
             fetchDatabase()
@@ -154,12 +159,16 @@ class MainActivity : ComponentActivity() {
                                      * 2 perform mock calc- veryfies app logic
                                      * 3 blemanager actually recieve data from esp , then calls calib class to handle (with reall data this time)
                                     */
+                                    bleManager.sendFilterToEsp(zoneAnchors, "CALIB")
                                     // MOKUJEMY wynik, żeby zobaczyć, czy działa ->
                                     val mockDistanceMatrix = arrayOf(
                                         doubleArrayOf(0.0, 11.45), // Odległość Kotwica 1 -> Kotwica 2 (8.45m)
                                         doubleArrayOf(11.15, 0.0)
                                     )
+                                    //3
+
                                     try {
+                                        //? how to obatain actuacl distanceMatrix
                                         val calibratedAnchors = autoCalibrationEngine.performCalibration(mockDistanceMatrix, zoneAnchors)
 
                                         appToEspLogs.add(0, "✅ Kalibracja Zakończona!")

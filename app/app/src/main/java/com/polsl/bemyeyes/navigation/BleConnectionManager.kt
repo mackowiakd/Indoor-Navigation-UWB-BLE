@@ -16,7 +16,6 @@ import java.nio.charset.StandardCharsets
 import java.util.UUID
 
 
-
 //Ignorujemy ostrzeżenia IDE o uprawnieniach, bo załatwimy je w MainActivity
 @SuppressLint("MissingPermission")
 class BleConnectionManager(
@@ -26,6 +25,8 @@ class BleConnectionManager(
     private var connectedGatt: BluetoothGatt? = null
     // Bezpieczny domyślny payload to 20 bajtów (MTU 23 - 3 bajty nagłówka)
     private var currentPayloadLimit: Int = 20
+    //  Callback  dla wyników kalibracji
+    var onCalibrationResultReceived: ((String) -> Unit)? = null
 
     // Odpowiednik statycznych zmiennych z Javy (w Kotlinie trzymane w companion object)
     companion object {
@@ -124,9 +125,18 @@ class BleConnectionManager(
     }
 
     private fun extractProximityData(payload: String) {
+        if (payload.startsWith("CALIB_RES:")) {
+            val cleanData = payload.removePrefix("CALIB_RES:")
+            postLog(" Odbiór danych kalibracyjnych: $cleanData")
+
+            // Wyrzucamy tekst (np. "1_2=11.45;") wyżej do MainActivity
+            onCalibrationResultReceived?.invoke(cleanData)
+
+            return // KRYTYCZNE: Kończymy funkcję. Nie parsujemy tego jako ruchu użytkownika!
+        }
+
         try {
-        //Każda Kotwica w telefonie będzie miała swoje ID (np. 1, 2) i Kotlin musi dostać jasny raport: U_1=2.45;U_2=5.10;B_ff:ff...=1.50.
-           // uwb tez musi miec ID
+        //payload z ESP : U_0x0001=2.45;U_0x0002=5.10;B_ff:ff:12:b1:64:d1=1.50;
             val records = payload.split(";")
 
             for (record in records) {
@@ -159,6 +169,7 @@ class BleConnectionManager(
                     id = record.substringBefore("=").substringAfter("B_").trim()
                     dist = record.substringAfter("=").toDoubleOrNull()
                 }
+
                 if (dist != null) {
                     // 1. ZIMNY START: Pytamy silnik, czy ten MAC to nowe piętro?
                     // routingEngine sprawdzi to w bazie i ew. zwróci nam całą listę!
@@ -179,7 +190,7 @@ class BleConnectionManager(
                     //call calculateUserPosition2D
                 }
                 else {
-                    postLog(" brak danych od $id: $payload")
+                    postLog("no dist data $id: $payload")
                 }
 
 
@@ -190,11 +201,12 @@ class BleConnectionManager(
         }
     }
 
-    fun sendFilterToEsp(devices: List<IoTDevice>) {
+    fun sendFilterToEsp(devices: List<IoTDevice>, command: String = "U") {
         // 1. Upewniamy się, że mamy połączenie i znajdujemy naszą "rurę"
         val gatt = connectedGatt ?: return
         val service = gatt.getService(SERVICE_UUID) ?: return
         val filterChar = service.getCharacteristic(FILTER_CHAR_UUID) ?: return
+        var payload ="";
 
 
         // oczekiwany format listy:U:123;B:ff:ff:12:b1:64:d1,a8:03:2a:b8:ee:fa
@@ -209,19 +221,38 @@ class BleConnectionManager(
             .joinToString(",") { it.macAddress }
 
         // 4. Składamy wszystko w docelowy format
-        var payload = "U:$uwbMacs;B:$bleMacs"
+        if(command== "U"){
+            payload = "$command:$uwbMacs;B:$bleMacs"}
+        else{
+            payload = "$command:$uwbMacs"
+        }
 
         if (devices.isEmpty()) {
            payload="RESET"
 
         }
-        // 3. Wkładamy do rury i wysyłamy
+        // 3.  wysyłamy
         filterChar.value = payload.toByteArray(Charsets.UTF_8)
         filterChar.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
         gatt.writeCharacteristic(filterChar)
 
-        postLog("✅ Wysłano listę MAC do ESP32: $payload")
+        postLog("Wysłano listę : $payload")
     }
+
+    /* else if (record.startsWith("CALIB_RESP:")) {
+                    /*kalibracja to zdarzenie administracyjne (wywoływane ręcznie z UI, np. raz na pół roku dla danej strefy
+                    -> osobna funkcja bo NIE MA NIC WSPOLNEGO z nawigowaniem (clean code)
+                    FORMAT FROM esp CALIB_RESP:0x0001_0x0002=11.45;0x0001_0x0003=11.45;0x0002_0x0003=11.45; eyc
+                     */
+                    //call AutoCalibrationEngine.performCalibration()
+                    //isCalibCom = true
+                    //make list of anchors for calib
+                    //anchorsCALIB = RetrofitClient.apiService.getDevicesForLocation(id)
+                    //return (no other op)
+                }
+
+     */
+
 
     fun disconnect() {
         postLog("🔌 Próba bezpiecznego rozłączenia...")

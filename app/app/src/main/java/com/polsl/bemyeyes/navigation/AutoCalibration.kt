@@ -50,6 +50,8 @@ class ThreeAnchorTrigonometryStrategy : CalibrationStrategy {
 
 // 4. GŁÓWNY SILNIK (Zarządca)
 class AutoCalibrationEngine {
+    // Pamięć podręczna na kotwice, które aktualnie każemy kalibrować ESP32
+    private var currentCalibrationAnchors: List<IoTDevice> = emptyList()
     fun performCalibration(distanceMatrix: Array<DoubleArray>, anchors: List<IoTDevice>): List<IoTDevice> {
         val anchorCount = anchors.size
 
@@ -62,5 +64,56 @@ class AutoCalibrationEngine {
         }
 
         return strategy.calibrate(distanceMatrix, anchors)
+    }
+
+    // Funkcja pomocnicza zamieniająca "1", "0x1" lub "0x0001" na jednolity format "0x0001"
+    private fun formatAnchorId(rawId: String): String {
+        // 1. Usuwamy "0x" (jeśli ESP32 je przysłało) żeby móc bezpiecznie zrzutować na liczbę
+        val cleanId = rawId.removePrefix("0x").trim()
+
+        // 2. Próbujemy zamienić tekst na liczbę (w systemie szesnastkowym - 16)
+        val numericId = cleanId.toIntOrNull(16)
+
+        // 3. Twój bezpieczny blok if-else!
+        return if (numericId != null) {
+            String.format("0x%04x", numericId)
+        } else {
+            rawId.trim() // Jeśli ESP32 przysłało jakieś literki nie do rozszyfrowania, oddajemy oryginał
+        }
+    }
+
+    // NOWA FUNKCJA: Tłumaczenie tekstu na macierz i wysyłka do API
+    fun processCalibrationData(rawData: String) {
+        val size = currentCalibrationAnchors.size
+        if (size < 2) return // Zabezpieczenie
+
+        // 1. Tworzymy pustą macierz z samymi zerami (np. 2x2)
+        val distanceMatrix = Array(size) { DoubleArray(size) { 0.0 } }
+
+        // 2. Tniemy odpowiedź (np. "1_2=11.45;") na kawałki
+        val records = rawData.split(";")
+
+        for (record in records) {
+            if (record.isBlank()) continue
+
+            val parts = record.split("=") // np. parts[0] = "1_2", parts[1] = "11.45"
+            if (parts.size == 2) {
+                val ids = parts[0].split("_")
+                val dist = parts[1].toDoubleOrNull() ?: continue
+
+                if (ids.size == 2) {
+                    val id1 = formatAnchorId(ids[0])
+                    val id2 = formatAnchorId(ids[1])
+                    // Szukamy, pod którym indeksem w naszej macierzy są te konkretne kotwice
+                    val index1 = currentCalibrationAnchors.indexOfFirst { it.macAddress == id1 }
+                    val index2 = currentCalibrationAnchors.indexOfFirst { it.macAddress == id2 }
+
+                    if (index1 != -1 && index2 != -1) {
+                        distanceMatrix[index1][index2] = dist
+                        distanceMatrix[index2][index1] = dist // Odbicie lustrzane dla macierzy
+                    }
+                }
+            }
+        }
     }
 }
