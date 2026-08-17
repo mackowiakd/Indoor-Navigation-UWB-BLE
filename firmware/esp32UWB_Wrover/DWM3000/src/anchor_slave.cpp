@@ -255,15 +255,12 @@ void send_calib_result_to_tag(uint8_t tag_id, uint8_t target_anchor_id, float di
 void handle_calibration_delegation(uint8_t target_anchor_id, uint8_t tag_id) {
     
     //@TODO: W tym miejscu implementujemy logikę delegowania kalibracji do innej kotwicy.
-    // 1. ZMIENIAM SIĘ W TAGA! 
-    // (To jest dokładna kopia funkcji executeTWR z Twojego ESP32!)
+    // 1. ZMIENIAM SIĘ W TAGA (To jest dokładna kopia funkcji executeTWR tag.cpp)
     // Wysyłam 'POL' do target_anchor_id (bo Kotwica 2 zareaguje na to automatycznie!)
     float distance_to_peer = executeTWR(target_anchor_id);
-    
-    // 2. Odsyłam  raport do ESP32 wyniki
+    // 2. Odsyłam  raport do ESP32 w
     send_calib_result_to_tag(tag_id, target_anchor_id, distance_to_peer);
-    
-    // 3. Funkcja się kończy, wracam do nasluchu.
+
 }
 
 // =========================================================================
