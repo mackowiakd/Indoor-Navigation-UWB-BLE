@@ -52,6 +52,11 @@ class ThreeAnchorTrigonometryStrategy : CalibrationStrategy {
 class AutoCalibrationEngine {
     // Pamięć podręczna na kotwice, które aktualnie każemy kalibrować ESP32
     private var currentCalibrationAnchors: List<IoTDevice> = emptyList()
+
+    fun prepareCalibration(anchors: List<IoTDevice>) {
+        currentCalibrationAnchors = anchors
+    }
+
     fun performCalibration(distanceMatrix: Array<DoubleArray>, anchors: List<IoTDevice>): List<IoTDevice> {
         val anchorCount = anchors.size
 
@@ -83,13 +88,12 @@ class AutoCalibrationEngine {
     }
 
     // NOWA FUNKCJA: Tłumaczenie tekstu na macierz i wysyłka do API
-    fun processCalibrationData(rawData: String) {
+    fun processCalibrationData(rawData: String): List<IoTDevice> {
         val size = currentCalibrationAnchors.size
-        if (size < 2) return // Zabezpieczenie
+        if (size < 2) throw IllegalStateException("Nie wystarczająca liczba kotwic do kalibracji")
 
         // 1. Tworzymy pustą macierz z samymi zerami (np. 2x2)
-        val distanceMatrix = Array(size) { DoubleArray(size) { 0.0 } }
-
+         val distanceMatrix = Array(size) { DoubleArray(size) { 0.0 } }
         // 2. Tniemy odpowiedź (np. "1_2=11.45;") na kawałki
         val records = rawData.split(";")
 
@@ -115,5 +119,7 @@ class AutoCalibrationEngine {
                 }
             }
         }
+        // Zwracamy wynik natychmiastowego przeliczenia algorytmu
+        return performCalibration(distanceMatrix, currentCalibrationAnchors)
     }
 }
