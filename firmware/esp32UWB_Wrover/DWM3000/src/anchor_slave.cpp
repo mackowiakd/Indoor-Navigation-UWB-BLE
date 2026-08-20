@@ -82,6 +82,10 @@ void handle_normal_poll(uint8_t sender_id, uint32_t frame_len) {
                 tx_report_msg[REPORT_MSG_DIST_IDX + 2] = dist_bytes[2];
                 tx_report_msg[REPORT_MSG_DIST_IDX + 3] = dist_bytes[3];
 
+                // Zabezpieczenie przed skażeniem pamięci po kalibracji - zmienia adres wysylki
+                tx_report_msg[7] = DID;
+                tx_report_msg[8] = sender_id;
+
                 // I Kotwica wysyła tx_report_msg!
                 dwt_writetxdata(sizeof(tx_report_msg), tx_report_msg, 0);
                 dwt_writetxfctrl(sizeof(tx_report_msg), 0, 0);
