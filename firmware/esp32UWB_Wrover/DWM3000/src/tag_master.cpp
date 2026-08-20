@@ -198,64 +198,6 @@ void TaskScan(void *pvParameters) {
 }
 
 // =========================================================================
-// Logika kalibracji kotwic UWB (wysyłanie pingów między kotwicami)
-// =========================================================================
-void runCalibrationMode() {
-
-    // 1. Pobieramy BEZPIECZNIE listę kotwic przeznaczonych do kalibracji
-    std::vector<uint8_t> calibList = appData.getCalibrationAnchors();
-    int n = calibList.size();
-
-     Serial.println("\n[UWB-CORE1] 🛠 Start trybu autokalibracji...");
-    if (n < 2) {
-        Serial.println("[UWB-CORE1] ⚠️ Za mało kotwic do kalibracji! Prerywam.");
-        isCalibrationCommand = false;
-        currentMode = MODE_IDLE;
-        return;
-    }
-
-    // Zmienna do sklejania gotowej paczki dla telefonu (np. CALIB_RES:1_2=5.00;1_3=8.45;)
-    String mockResult = "CALIB_RES:";
-
-    // 2. Tworzymy UNIKALNE pary (j zaczyna się od i + 1)
-    for(int i = 0; i < n; i++) {
-        for(int j = i + 1; j < n; j++) { 
-            uint8_t anchor1 = calibList[i];
-            uint8_t anchor2 = calibList[j];
-
-            // TODO: cal -> anchorI (anchorJ) rn just mock to check logic
-            vTaskDelay(pdMS_TO_TICKS(400)); // Symulujemy, że pomiar zajmuje 400ms
-
-            // Generujemy wymyślony dystans (np. 5.0m + jakaś mała wariacja, żeby pary miały inne wyniki)
-            float mockDistance = 5.0f + (float)i + ((float)j * 0.5f); 
-          
-            //REAL implem: (after testing)
-            //float dist = executeTWR(anchor1, anchor2, true); chyba powinna miec 2 arg, kogo pingujemy i destynacje!
-            
-            // vTaskDelay(pdMS_TO_TICKS(100));
-            //finalRes => string(anchorI + anchorJ = dis)   
-            
-            mockResult += String(anchor1, HEX) + "_" + String(anchor2, HEX) + "=" + String(mockDistance, 2) + ";";
-            
-        }
-     
-        
-    }
-    // Przekazujemy gotowy paczkę na rdzeń 0 po zakończeniu pętli!
-    appData.setCalibrationResponse(mockResult); 
-
-    Serial.println("[UWB-CORE1] pakiet wynikowy: " + mockResult);
-    // 3. TODO: Przekazanie mockResult na rdzeń 0 (do TaskNotify), aby poleciał przez BLE
-
-    vTaskDelay(pdMS_TO_TICKS(1000)); // Chwila oddechu przed resetem
-
-    // Po zakończeniu sprzątamy i wracamy do trybu IDLE (nasłuchu)
-    appData.clearCalibrationAnchors(); 
-    isCalibrationCommand = false;
-    currentMode = MODE_IDLE;
-    Serial.println("[UWB-CORE1] ✅ Kalibracja zakończona. Wracam do IDLE.\n");
-}
-// =========================================================================
 // 5. UNIWERSALNA FUNKCJA UWB (TWR - Two Way Ranging)
 // =========================================================================
 
@@ -263,10 +205,7 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibratio
     float received_distance = -1.0; // Domyślnie ustawiamy na -1.0, co oznacza błąd (timeout lub brak odpowiedzi)
     
     // 1. PODMIANA NAGŁÓWKA W LOCIE (Trwa nanosekundy!)
-    if (isCalibrationMode) {
-        tx_poll_msg[5] = 'C'; tx_poll_msg[6] = 'A'; tx_poll_msg[7] = 'L';
-        tx_poll_msg[10] = target_anchor;
-    } else {
+    if (MODE_NAVIGATION) {
         tx_poll_msg[5] = 'P'; tx_poll_msg[6] = 'O'; tx_poll_msg[7] = 'L';
     }
 
@@ -274,8 +213,6 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibratio
     rx_resp_msg[7]   = target_anchor; // Od kogo czekam na odp (Kotwica)
     tx_final_msg[7]  = target_anchor; // Do kogo wysyłam FINAL (Kotwica)
     tx_report_msg[7] = target_anchor; // Od kogo czekam na raport (Kotwica)
-
-
 
     // ID TAGA NA INDEKSIE 8 (Zawsze równe 1)
     rx_resp_msg[8]   = 1;
@@ -392,6 +329,112 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibratio
     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK);
     return received_distance; // Zwracamy zmierzoną odległość (lub -1.0 jeśli był błąd)
 }
+
+//===================================================================================
+// CRS FROM ANCHOR :tags in lil slave mode waitin for POLL ping(but actually resp) from CALIB command
+//================================================================================
+float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
+    tx_poll_msg[5] = 'C'; tx_poll_msg[6] = 'A'; tx_poll_msg[7] = 'L';
+    tx_poll_msg[8] = target_anchor;
+    tx_poll_msg[10] = dest_anchor;
+
+    tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb++;
+    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
+    dwt_writetxdata(sizeof(tx_poll_msg), tx_poll_msg, 0);
+    dwt_writetxfctrl(sizeof(tx_poll_msg), 0, 1);
+
+    // TWOJE ROZWIĄZANIE: Polegamy w 100% na sprzętowym timeoucie radaru!
+    dwt_setrxaftertxdelay(0); 
+    dwt_setrxtimeout(CALIB_RX_TIMEOUT_UUS);      
+    
+    dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
+
+    uint32_t local_status_reg = 0;
+
+    // Pętla odpytuje sprzęt, czy coś przyszło ALBO czy hardware sam odciął nasłuch (TIMEOUT)
+    while (!((local_status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
+        taskYIELD(); 
+    }
+
+    if (local_status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
+        uint32_t frame_len;
+        dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
+        frame_len = dwt_read32bitreg(RX_FINFO_ID) & FRAME_LEN_MAX_EX;
+        
+        if (frame_len <= RX_BUF_LEN) {
+            dwt_readrxdata(rx_buffer, frame_len, 0);
+        }
+
+        // Sprawdzamy nagłówek (Czy to telegram CRS od Kotwicy?)
+        if (rx_buffer[5] == 'C' && rx_buffer[6] == 'R' && rx_buffer[7] == 'S') {
+            float distance;
+            memcpy(&distance, &rx_buffer[10], 4);
+            dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK);
+            return distance; // SUKCES!
+        }
+    } else if (local_status_reg & SYS_STATUS_ALL_RX_TO) {
+        // HW sam podniósł flagę TIMEOUT
+        Serial.println("[TAG-CALIB] Błąd: Hardware TIMEOUT - Kotwica nie przysłała telegramu CRS na czas.");
+    }
+
+    // Sprzątanie rejestru przed wyjściem (niezależnie czy błąd czy dziwna ramka)
+    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK);
+    return -1.0;
+}
+
+// =========================================================================
+// Logika kalibracji kotwic UWB (wysyłanie pingów między kotwicami)
+// =========================================================================
+void runCalibrationMode() {
+
+    // 1. Pobieramy BEZPIECZNIE listę kotwic przeznaczonych do kalibracji
+    std::vector<uint8_t> calibList = appData.getCalibrationAnchors();
+    int n = calibList.size();
+
+     Serial.println("\n[UWB-CORE1] 🛠 Start trybu autokalibracji...");
+    if (n < 2) {
+        Serial.println("[UWB-CORE1] ⚠️ Za mało kotwic do kalibracji! Prerywam.");
+        isCalibrationCommand = false;
+        currentMode = MODE_IDLE;
+        return;
+    }
+
+    // Zmienna do sklejania gotowej paczki dla telefonu (np. CALIB_RES:1_2=5.00;1_3=8.45;)
+    String mockResult = "CALIB_RES:";
+
+    // 2. Tworzymy UNIKALNE pary (j zaczyna się od i + 1)
+    for(int i = 0; i < n; i++) {
+        for(int j = i + 1; j < n; j++) { 
+            uint8_t anchor1 = calibList[i];
+            uint8_t anchor2 = calibList[j];
+
+            // TODO: cal -> anchorI (anchorJ) rn just mock to check logic
+            vTaskDelay(pdMS_TO_TICKS(400)); // Symulujemy, że pomiar zajmuje 400ms
+
+            // Generujemy wymyślony dystans (np. 5.0m + jakaś mała wariacja, żeby pary miały inne wyniki)
+           // float mockDistance = 5.0f + (float)i + ((float)j * 0.5f); 
+            //REAL implem: (after testing)
+            float dist = executeTWR(anchor1, anchor2, true);     
+            mockResult += String(anchor1, HEX) + "_" + String(anchor2, HEX) + "=" + String(dist, 2) + ";";
+            
+        }
+        
+    }
+    // Przekazujemy gotowy paczkę na rdzeń 0 po zakończeniu pętli!
+    appData.setCalibrationResponse(mockResult); 
+
+    Serial.println("[UWB-CORE1] pakiet wynikowy: " + mockResult);
+    // 3. TODO: Przekazanie mockResult na rdzeń 0 (do TaskNotify), aby poleciał przez BLE
+
+    vTaskDelay(pdMS_TO_TICKS(1000)); // Chwila oddechu przed resetem
+
+    // Po zakończeniu sprzątamy i wracamy do trybu IDLE (nasłuchu)
+    appData.clearCalibrationAnchors(); 
+    isCalibrationCommand = false;
+    currentMode = MODE_IDLE;
+    Serial.println("[UWB-CORE1] Kalibracja zakończona. Wracam do IDLE.\n");
+}
+
 // =========================================================================
 //  OLD MAIN LOOP fun
 // =========================================================================
