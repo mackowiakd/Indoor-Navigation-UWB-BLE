@@ -1,11 +1,9 @@
 
 /*
+Format odbioru listy urzadzen z apki
+U:00
 Zaproponujmy taki format ładunku (Payload):
 U_1=4.20;U_2=1.85;B_ff:ff:12:b1:64:d1=3.10,B_a8:03:2a:b8:ee:fa=5.60;
-
-Znak : -> "Aha, nadchodzi lista, rozcinam po przecinkach".
-
-Znak = -> "Aha, to jest pomiar, wrzucam do bazy danych".
 */
 #include "app_data.h"
 
@@ -36,7 +34,7 @@ bool AppDataManager::parseBlePayload(String payload) {
     }
 
     // ==========================================================
-    // DODANY KOD: OBSŁUGA KOMENDY KALIBRACJI (np. CALIB:0x0001,0x0002)
+    // OBSŁUGA KOMENDY KALIBRACJI (np. CALIB:0x0001,0x0002)
     // ==========================================================
     if (payload.startsWith("CALIB:")) {
         String calibStr = payload.substring(6); // Wycinamy "CALIB:"
@@ -65,11 +63,15 @@ bool AppDataManager::parseBlePayload(String payload) {
         isCalibrationCommand = true; // Zmieniamy stan globalny dla Core 1 (TaskUWB)
         return true; // Kończymy! Nie ruszamy standardowych wektorów nawigacji!
     }
+    // ==========================================================
+    // standard command: device list, format U:0x0001,0x0002,B:ff:ff:12:a2:43:90;
+    // ==========================================================
 
     int uwbIndex = payload.indexOf("U:");
     int bleIndex = payload.indexOf(";B:");
 
-    if (uwbIndex == -1 || bleIndex == -1) {
+    if (uwbIndex == -1 && bleIndex == -1) //no data at all
+    {
          Serial.println("[AppData][ERR] Zły format! Oczekiwano np. U_1=4.20;B_ff:ff:12:b1:64:d1=3.10");
         return false;
     }
@@ -168,8 +170,7 @@ String AppDataManager::getAggregatedData() {
 
     // 1. Sklejamy odległości Kotwic UWB (np. U_0x001=2.45;U_0x002=5.10;)
     for (const auto& anchor : active_uwb_anchors) {
-        if (anchor.distance > 0)  //&& (current_time - anchor.last_seen_ms > TIMEOUT_MS))
-        {
+        if (anchor.distance > 0 && (current_time - anchor.last_seen_ms > TIMEOUT_MS)) {
             char hexBuf[10];
             // snprintf JEST BEZPIECZNE - sizeof(hexBuf) fizycznie blokuje wyciek pamięci!
             snprintf(hexBuf, sizeof(hexBuf), "0x%04X", anchor.id);
