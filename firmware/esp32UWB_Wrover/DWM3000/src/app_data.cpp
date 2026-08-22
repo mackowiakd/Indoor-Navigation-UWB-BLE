@@ -75,7 +75,6 @@ bool AppDataManager::parseBlePayload(String payload) {
          Serial.println("[AppData][ERR] Zły format! Oczekiwano np. U_1=4.20;B_ff:ff:12:b1:64:d1=3.10");
         return false;
     }
-
     // --- 1. PARSOWANIE KOTWIC UWB (Z przecinkami!) ---
     String uwbStr = payload.substring(uwbIndex + 2, bleIndex);
     std:: lock_guard<std::mutex> lock(dataMutex); // shared varaible -> locking whole function scope
@@ -170,7 +169,8 @@ String AppDataManager::getAggregatedData() {
 
     // 1. Sklejamy odległości Kotwic UWB (np. U_0x001=2.45;U_0x002=5.10;)
     for (const auto& anchor : active_uwb_anchors) {
-        if (anchor.distance > 0 && (current_time - anchor.last_seen_ms > TIMEOUT_MS)) {
+       
+        if (anchor.distance > 0 && (current_time - anchor.last_seen_ms <= TIMEOUT_MS )) {
             char hexBuf[10];
             // snprintf JEST BEZPIECZNE - sizeof(hexBuf) fizycznie blokuje wyciek pamięci!
             snprintf(hexBuf, sizeof(hexBuf), "0x%04X", anchor.id);
@@ -191,7 +191,6 @@ String AppDataManager::getAggregatedData() {
             Serial.printf("%s ", device.mac.c_str()); 
         }
     }
-    Serial.println("\n");
        
     return payload;
 }
@@ -245,34 +244,6 @@ uint8_t AppDataManager::getUwbAnchorId(int index) {
 }
 
  
-
-void AppDataManager::markUwbAnchorDead(uint8_t anchorId) {
-    std::lock_guard<std::mutex> lock(dataMutex);
-    for (auto& anchor : active_uwb_anchors) {
-        if (anchor.id == anchorId && anchor.distance > 0) {
-            anchor.distance = -1.0f; // Zabij ducha!
-            Serial.printf("[AppData] 👻 KOTWICA 0x%04X UZNANA ZA MARTWĄ!\n", anchor.id);
-            return;
-        }
-    }
-}
-
-// Oraz dodaj zwiększanie licznika błędów:
-void AppDataManager::incrementUwbError(uint8_t anchorId) {
-    std::lock_guard<std::mutex> lock(dataMutex);
-    for (auto& anchor : active_uwb_anchors) {
-        if (anchor.id == anchorId) {
-            anchor.failed_attempts++;
-            // Jeśli zawiodła np. 15 razy (co trwa ułamek sekundy w pętli), zabij ją
-            if (anchor.failed_attempts > 15 && anchor.distance > 0) {
-                anchor.distance = -1.0f;
-                Serial.printf("[AppData] 👻 KOTWICA 0x%04X UMARŁA (TIMEOUTY)!\n", anchor.id);
-            }
-            return;
-        }
-    }
-}
-
 void AppDataManager::setCalibrationResponse(String res) {
     std::lock_guard<std::mutex> lock(dataMutex);
     calibration_response = res;
