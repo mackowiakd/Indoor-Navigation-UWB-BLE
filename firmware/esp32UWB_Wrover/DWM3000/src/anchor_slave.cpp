@@ -109,10 +109,15 @@ void handle_normal_poll(uint8_t sender_id, uint32_t frame_len) {
 
 
 float executeTWR(uint8_t target_anchor) {
+
     float received_distance = -1.0; // Domyślnie ustawiamy na -1.0, co oznacza błąd (timeout lub brak odpowiedzi)
-    
-    // tryb poll musi byc juz ustawiony w dispacherze (loop)
     uint32_t local_status_reg = 0;
+
+    //message header!
+    tx_poll_msg[5] = 'P';
+    tx_poll_msg[6] = 'O';
+    tx_poll_msg[7] = 'L';
+
     tx_poll_msg[8]   = target_anchor; // Kogo wołam (Kotwica)
     rx_resp_msg[7]   = target_anchor; // Od kogo czekam na odp (Kotwica)
     tx_final_msg[7]  = target_anchor; // Do kogo wysyłam FINAL (Kotwica)
