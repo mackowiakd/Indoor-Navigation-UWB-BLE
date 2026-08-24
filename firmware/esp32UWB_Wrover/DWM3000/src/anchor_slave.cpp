@@ -12,12 +12,11 @@
 
 // anchor slave (poll resp)
 void handle_normal_poll(uint8_t sender_id, uint32_t frame_len) {
-    // 1. Odsyła RESP do sender_id
-    // 2. Czeka na FIN
-    // 3. Odsyła REPORT do sender_id
-    //stary kod slave z loop
+  
     uint32_t resp_tx_time1;
     uint32_t local_status_reg = 0;
+    tx_resp_msg1[8] = sender_id;  // Wysyłam RESP do tego, kto zapytał
+    rx_final_msg1[8] = sender_id; // Będę oczekiwał FINALa od tego, kto zapytał
 
     poll_rx_ts = get_rx_timestamp_u64();
     resp_tx_time1 = (poll_rx_ts + (POLL_RX_TO_RESP_TX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;
@@ -128,6 +127,7 @@ float executeTWR(uint8_t target_anchor) {
     rx_resp_msg[8]   = DID;
     tx_final_msg[8]  = DID;
     tx_report_msg[8] = DID;
+    tx_poll_msg[10] = DID;
 
     // KROK 1: Wysyłamy wiadomość POLL
     tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
@@ -346,8 +346,9 @@ void loop() {
             if (rx_buffer[5] == 'P' && rx_buffer[6] == 'O' && rx_buffer[7] == 'L') {
                 
                 Serial.println("\n[KOTWICA] Odebrano POLL od Taga! Wysyłam RESP...");
-                // W trybie nawigacji Tag jest oznaczony jako ID 1
-                handle_normal_poll(1, frame_len); 
+                uint8_t sender_id = rx_buffer[10]; 
+                handle_normal_poll(sender_id, frame_len); 
+            
                 
             } 
             else if (rx_buffer[5] == 'C' && rx_buffer[6] == 'A' && rx_buffer[7] == 'L') {
