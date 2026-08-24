@@ -203,13 +203,13 @@ void TaskScan(void *pvParameters) {
 
 float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibrationMode) {
     float received_distance = -1.0; // Domyślnie ustawiamy na -1.0, co oznacza błąd (timeout lub brak odpowiedzi)
-    
-    // 1. PODMIANA NAGŁÓWKA W LOCIE (Trwa nanosekundy!)
-    if (MODE_NAVIGATION) {
-        tx_poll_msg[5] = 'P'; tx_poll_msg[6] = 'O'; tx_poll_msg[7] = 'L';
-    }
 
+    // 1. PODMIANA NAGŁÓWKA W LOCIE (Trwa nanosekundy!)
+    
+    tx_poll_msg[5] = 'P'; tx_poll_msg[6] = 'O'; tx_poll_msg[7] = 'L';
+   
     tx_poll_msg[8]   = target_anchor; // Kogo wołam (Kotwica)
+    tx_poll_msg[10] = 1; // kotwica czyta z tego bajtu SenderID
     rx_resp_msg[7]   = target_anchor; // Od kogo czekam na odp (Kotwica)
     tx_final_msg[7]  = target_anchor; // Do kogo wysyłam FINAL (Kotwica)
     tx_report_msg[7] = target_anchor; // Od kogo czekam na raport (Kotwica)
@@ -218,6 +218,7 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibratio
     rx_resp_msg[8]   = 1;
     tx_final_msg[8]  = 1;
     tx_report_msg[8] = 1;
+    
 
     // KROK 1: Wysyłamy wiadomość POLL
     tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
@@ -306,12 +307,10 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibratio
                         Serial.println("[TAG] Odebrano REPORT od Kotwicy! Rozpakowuję...");
                         memcpy(&received_distance, &rx_buffer[REPORT_MSG_DIST_IDX], 4);
                       
-                    } else {
-                        Serial.println("[TAG] To nie jest paczka REPORT. Zły nagłówek.");
                     }
                 } else {
                     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
-                    appData.incrementUwbError(target_anchor);
+                    //appData.incrementUwbError(target_anchor);
                     Serial.println("[TAG][BŁĄD] TIMEOUT 2: Kotwica nie przysłała paczki REPORT na czas!");
                 }
             } else {
@@ -411,10 +410,14 @@ void runCalibrationMode() {
             // TODO: cal -> anchorI (anchorJ) rn just mock to check logic
             vTaskDelay(pdMS_TO_TICKS(400)); // Symulujemy, że pomiar zajmuje 400ms
 
-            // Generujemy wymyślony dystans (np. 5.0m + jakaś mała wariacja, żeby pary miały inne wyniki)
-           // float mockDistance = 5.0f + (float)i + ((float)j * 0.5f); 
+            //last (3rd) anchor doesnt exists
+            // if(j==n-1){
+            //     float mockDistance = 3.0f + (float)i + ((float)j * 0.5f); 
+            // }
+        
             //REAL implem: (after testing)
-            float dist = executeTWR(anchor1, anchor2, true);     
+            float dist = executeCalibrationCommand(anchor1, anchor2);
+          
             mockResult += String(anchor1, HEX) + "_" + String(anchor2, HEX) + "=" + String(dist, 2) + ";";
             
         }
