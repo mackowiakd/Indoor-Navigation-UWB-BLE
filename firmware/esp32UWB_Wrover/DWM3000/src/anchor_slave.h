@@ -17,7 +17,7 @@ static dwt_config_t config = {
 };
 #define TX_ANT_DLY 16385
 #define RX_ANT_DLY 16385
-#define DID 1      // ID tej konkretnej kotwicy 
+#define DID 1    // ID tej konkretnej kotwicy 
 #define TAG_ID 1    // ID Taga, z którym testujemy układ (w przyszłości Kotwica sama to odczyta z POLLa!)
 
 // slave config                   0     1   2    3     4    5    6    7       8       9
