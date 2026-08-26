@@ -349,31 +349,44 @@ float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
     dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
 
     uint32_t local_status_reg = 0;
+    unsigned long software_timeout_start = millis();
 
-    // Pętla odpytuje sprzęt, czy coś przyszło ALBO czy hardware sam odciął nasłuch (TIMEOUT)
-    while (!((local_status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
-        taskYIELD(); 
-    }
-
-    if (local_status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
-        uint32_t frame_len;
-        dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
-        frame_len = dwt_read32bitreg(RX_FINFO_ID) & FRAME_LEN_MAX_EX;
-        
-        if (frame_len <= RX_BUF_LEN) {
-            dwt_readrxdata(rx_buffer, frame_len, 0);
+    // Pętla trwa tak dlugo az dpstaniemy CRS albo dobijemy timout a nie gdy dostaniemy 'COS'
+    while (true){
+        local_status_reg = dwt_read32bitreg(SYS_STATUS_ID);
+        // 1. BEZPIECZNIK PROGRAMOWY (Chroni przed ciągłym resetowaniem nasłuchu przez śmieci)
+        if (millis() - software_timeout_start > 500) {
+            Serial.println("[TAG-CALIB] Błąd: Software TIMEOUT - Eter zagłuszony śmieciami!");
+            break; 
         }
 
-        // Sprawdzamy nagłówek (Czy to telegram CRS od Kotwicy?)
-        if (rx_buffer[5] == 'C' && rx_buffer[6] == 'R' && rx_buffer[7] == 'S') {
-            float distance;
-            memcpy(&distance, &rx_buffer[10], 4);
-            dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK);
-            return distance; // SUKCES!
+        if (local_status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
+            uint32_t frame_len;
+            dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
+            frame_len = dwt_read32bitreg(RX_FINFO_ID) & FRAME_LEN_MAX_EX;
+            
+            if (frame_len <= RX_BUF_LEN) {
+                dwt_readrxdata(rx_buffer, frame_len, 0);
+            }
+
+            // Sprawdzamy nagłówek (Czy to telegram CRS od Kotwicy?)
+            if (rx_buffer[5] == 'C' && rx_buffer[6] == 'R' && rx_buffer[7] == 'S') {
+                float distance;
+                memcpy(&distance, &rx_buffer[10], 4);
+                dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK);
+                return distance; // SUKCES!
+            }
+            else {
+                // To jakaś inna paczka (np. podsłuchany POL lub RESP kotwic). 
+                // Ignorujemy i twardo włączamy nasłuch ponownie!
+                dwt_rxenable(DWT_START_RX_IMMEDIATE);
+            }
+        } // 2. BEZPIECZNIK SPRZĘTOWY (Chroni przed absolutną ciszą)
+        else if (local_status_reg & SYS_STATUS_ALL_RX_TO) {
+            // HW sam podniósł flagę TIMEOUT
+            Serial.println("[TAG-CALIB] Błąd: Hardware TIMEOUT - Kotwica nie przysłała telegramu CRS na czas.");
         }
-    } else if (local_status_reg & SYS_STATUS_ALL_RX_TO) {
-        // HW sam podniósł flagę TIMEOUT
-        Serial.println("[TAG-CALIB] Błąd: Hardware TIMEOUT - Kotwica nie przysłała telegramu CRS na czas.");
+        taskYIELD();
     }
 
     // Sprzątanie rejestru przed wyjściem (niezależnie czy błąd czy dziwna ramka)
@@ -416,6 +429,7 @@ void runCalibrationMode() {
             // }
         
             //REAL implem: (after testing)
+        
             float dist = executeCalibrationCommand(anchor1, anchor2);
           
             mockResult += String(anchor1, HEX) + "_" + String(anchor2, HEX) + "=" + String(dist, 2) + ";";
