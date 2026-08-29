@@ -17,17 +17,16 @@ static dwt_config_t config = {
 };
 #define TX_ANT_DLY 16385
 #define RX_ANT_DLY 16385
-#define DID 1    // ID tej konkretnej kotwicy 
-#define TAG_ID 1    // ID Taga, z którym testujemy układ (w przyszłości Kotwica sama to odczyta z POLLa!)
+#define DID 1   // ID tej konkretnej kotwicy - DO ZMIANY JESLI WGRYWAMY NA WIECEJ NIZ JEDNA
 
 // slave config                   0     1   2    3     4    5    6    7       8       9
 static uint8_t tx_resp_msg1[]  = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'E',  DID,  'X', 0x10, 0x02, 0, 0, 0, 0};
 static uint8_t rx_final_msg1[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'F', 'I',  DID,  'X', 0x23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-static uint8_t tx_report_msg[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'P',  DID,  TAG_ID, 0x40, 0, 0, 0, 0, 0, 0, 0};
+static uint8_t tx_report_msg[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'P',  DID,  0, 0x40, 0, 0, 0, 0, 0, 0, 0};
 //master conifg
 static uint8_t tx_poll_msg[]   = {0x41, 0x88, 0, 0xCA, 0xDE, 'X', 'X', 'X', 0, 0x21, 0, 0}; //POL or CAL 
-static uint8_t rx_resp_msg[]   = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'E', 0, TAG_ID, 0x10, 0x02, 0, 0, 0, 0};
-static uint8_t tx_final_msg[]  = {0x41, 0x88, 0, 0xCA, 0xDE, 'F', 'I', 0, TAG_ID, 0x23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static uint8_t rx_resp_msg[]   = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'E', 0, 0, 0x10, 0x02, 0, 0, 0, 0};
+static uint8_t tx_final_msg[]  = {0x41, 0x88, 0, 0xCA, 0xDE, 'F', 'I', 0, 0, 0x23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
 #define REPORT_MSG_DIST_IDX 11 // Cale miejsce od indeksu 11 jest czyste na naszego Floata!
 #define ALL_MSG_COMMON_LEN 10

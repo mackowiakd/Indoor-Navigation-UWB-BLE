@@ -232,9 +232,8 @@ float executeTWR(uint8_t target_anchor) {
 }
 
 void send_calib_result_to_tag(uint8_t tag_id, uint8_t target_anchor_id, float distance) {
-    // 1. Tworzymy nową ramkę. 
+ 
     // Zamiast POL, RES, FIN, nazywamy ją 'C', 'R', 'S' (Calibration Result)
-    // rx_buffer:       0     1  2     3     4    5    6    7      8               9    10+ (Float)
     uint8_t tx_crs_msg[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'C', 'R', 'S', tag_id, target_anchor_id, 0, 0, 0, 0, 0, 0};
 
     // 2. Wrzucamy nasz wynik kalibracji (float) do paczki
@@ -263,7 +262,7 @@ void send_calib_result_to_tag(uint8_t tag_id, uint8_t target_anchor_id, float di
 // anchor master (tag impostor)
 void handle_calibration_delegation(uint8_t target_anchor_id, uint8_t tag_id) {
     
-    //@TODO: W tym miejscu implementujemy logikę delegowania kalibracji do innej kotwicy.
+    
     // 1. ZMIENIAM SIĘ W TAGA (To jest dokładna kopia funkcji executeTWR tag.cpp)
     // Wysyłam 'POL' do target_anchor_id (bo Kotwica 2 zareaguje na to automatycznie!)
     float distance_to_peer = executeTWR(target_anchor_id);
@@ -319,6 +318,7 @@ void loop() {
     dwt_setrxtimeout(0);
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
     uint32_t status_reg = 0;
+    uint8_t sender_id;
 
     // 1. Zabezpieczona pętla nasłuchu - czekamy, aż coś przyleci do anteny (POLL od Taga)
     while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_ERR))) {
@@ -338,7 +338,7 @@ void loop() {
         // =======================================================
         // ROZDZIELACZ LOGIKI (DISPATCHER)
         // =======================================================
-    
+        sender_id=rx_buffer[11];
         // Sprawdzamy,  czy jest DO NAS
         if ( rx_buffer[8] == DID) {
             
@@ -346,7 +346,7 @@ void loop() {
             if (rx_buffer[5] == 'P' && rx_buffer[6] == 'O' && rx_buffer[7] == 'L') {
                 
                 Serial.println("\n[KOTWICA] Odebrano POLL od Taga! Wysyłam RESP...");
-                uint8_t sender_id = rx_buffer[10]; 
+               
                 handle_normal_poll(sender_id, frame_len); 
             
                 
@@ -356,7 +356,7 @@ void loop() {
                 Serial.println("\n[KOTWICA] 🛠 Dostałem rozkaz KALIBRACJI! Zmieniam się w Inicjatora!");
                 uint8_t target_anchor_id = rx_buffer[10]; // To przemyciliśmy w ESP32!
                 
-                handle_calibration_delegation(target_anchor_id, 1);
+                handle_calibration_delegation(target_anchor_id, sender_id);
                 
             } 
             else {
