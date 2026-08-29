@@ -73,8 +73,7 @@ private:
     bool hasBleTargets() {
         return !target_ble_devices.empty();
     }
-    void markUwbAnchorDead(uint8_t anchorId);
-    void incrementUwbError(uint8_t anchorId);
+    
 };
 
 // Globalna instancja dostępna wszędzie po zaincludowaniu nagłówka
