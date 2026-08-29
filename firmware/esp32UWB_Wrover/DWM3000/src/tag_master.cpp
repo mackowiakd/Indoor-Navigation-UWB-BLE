@@ -202,22 +202,24 @@ void TaskScan(void *pvParameters) {
 // =========================================================================
 
 float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibrationMode) {
-    float received_distance = -1.0; // Domyślnie ustawiamy na -1.0, co oznacza błąd (timeout lub brak odpowiedzi)
 
+    float received_distance = -1.0; // Domyślnie ustawiamy na -1.0, co oznacza błąd (timeout lub brak odpowiedzi)
+    uint32_t status_reg = 0;
+    unsigned long software_watchdog = millis();
     // 1. PODMIANA NAGŁÓWKA W LOCIE (Trwa nanosekundy!)
     
     tx_poll_msg[5] = 'P'; tx_poll_msg[6] = 'O'; tx_poll_msg[7] = 'L';
    
     tx_poll_msg[8]   = target_anchor; // Kogo wołam (Kotwica)
-    tx_poll_msg[10] = 1; // kotwica czyta z tego bajtu SenderID
+    tx_poll_msg[11] = TAG_ID; // kotwica czyta z tego bajtu SenderID
     rx_resp_msg[7]   = target_anchor; // Od kogo czekam na odp (Kotwica)
     tx_final_msg[7]  = target_anchor; // Do kogo wysyłam FINAL (Kotwica)
     tx_report_msg[7] = target_anchor; // Od kogo czekam na raport (Kotwica)
 
     // ID TAGA NA INDEKSIE 8 (Zawsze równe 1)
-    rx_resp_msg[8]   = 1;
-    tx_final_msg[8]  = 1;
-    tx_report_msg[8] = 1;
+    rx_resp_msg[8]   = TAG_ID;
+    tx_final_msg[8]  = TAG_ID;
+    tx_report_msg[8] = TAG_ID;
     
 
     // KROK 1: Wysyłamy wiadomość POLL
@@ -234,9 +236,9 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibratio
     //sendig POLL and waiting for RESP
     dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
 
-    // Czekamy na odpowiedź RESP od Tagu
+    // Czekamy na odpowiedź RESP  => change for whiile(true) as anchors may not catch up with tag working in RTOS 
     while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
-    taskYIELD();  //oddaje procesor zadaniom z tym samym lub wyższym priorytetem (
+    taskYIELD();  
     }
     // 2. Coś przyleciało do anteny! -> zmiana na TAG initialized TWR czyli my pytamy 
     //po ID z naszej listy urządzeń docelowych (np. POLL do 0x0001)
@@ -282,7 +284,7 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibratio
             dwt_setrxtimeout(RESP_delay);     // Czekamy na REPORT do 8ms
         
 
-            // Sending FINAL and waiting for REPORT
+            // Sending FINAL and waiting for REPORT -> also for while(true)
             if (dwt_starttx(DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED) == DWT_SUCCESS) {
 
                 // >>> now we can print as task for uwb are already launched  <<<
@@ -333,9 +335,12 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibratio
 // CRS FROM ANCHOR :tags in lil slave mode waitin for POLL ping(but actually resp) from CALIB command
 //================================================================================
 float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
+
+    float distance= -1.0;
     tx_poll_msg[5] = 'C'; tx_poll_msg[6] = 'A'; tx_poll_msg[7] = 'L';
     tx_poll_msg[8] = target_anchor;
     tx_poll_msg[10] = dest_anchor;
+    tx_poll_msg[11] = TAG_ID; //  Podpisujemy rozkaz własnym ID!
 
     tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb++;
     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
@@ -353,12 +358,12 @@ float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
 
     // Pętla trwa tak dlugo az dpstaniemy CRS albo dobijemy timout a nie gdy dostaniemy 'COS'
     while (true){
-        local_status_reg = dwt_read32bitreg(SYS_STATUS_ID);
         // 1. BEZPIECZNIK PROGRAMOWY (Chroni przed ciągłym resetowaniem nasłuchu przez śmieci)
         if (millis() - software_timeout_start > 500) {
             Serial.println("[TAG-CALIB] Błąd: Software TIMEOUT - Eter zagłuszony śmieciami!");
             break; 
         }
+         local_status_reg = dwt_read32bitreg(SYS_STATUS_ID);
 
         if (local_status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
             uint32_t frame_len;
@@ -370,8 +375,8 @@ float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
             }
 
             // Sprawdzamy nagłówek (Czy to telegram CRS od Kotwicy?)
-            if (rx_buffer[5] == 'C' && rx_buffer[6] == 'R' && rx_buffer[7] == 'S') {
-                float distance;
+            if (rx_buffer[5] == 'C' && rx_buffer[6] == 'R' && rx_buffer[7] == 'S' && rx_buffer[8] == TAG_ID) {
+                
                 memcpy(&distance, &rx_buffer[10], 4);
                 dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK);
                 return distance; // SUKCES!
@@ -391,7 +396,7 @@ float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
 
     // Sprzątanie rejestru przed wyjściem (niezależnie czy błąd czy dziwna ramka)
     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK);
-    return -1.0;
+    return  distance;
 }
 
 // =========================================================================
