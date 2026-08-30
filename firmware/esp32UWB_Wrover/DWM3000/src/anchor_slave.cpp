@@ -8,16 +8,17 @@
  *  z Taga
  * 
  */
-#include "anchor_slave.h"
+#include "config.h"
 
 // anchor slave (poll resp)
 void handle_normal_poll(uint8_t sender_id, uint32_t frame_len) {
-  
+    double  distance;
     uint32_t resp_tx_time1;
     uint32_t local_status_reg = 0;
-    tx_resp_msg1[8] = sender_id;  // Wysyłam RESP do tego, kto zapytał
-    rx_final_msg1[8] = sender_id; // Będę oczekiwał FINALa od tego, kto zapytał
-
+    tx_resp_msg[DEST_IDX] = sender_id;  // Wysyłam RESP do tego, kto zapytał
+    tx_resp_msg[SENDER_IDX]= ANCHOR_NUM ;
+    rx_final_msg[SENDER_IDX] = sender_id; // Będę oczekiwał FINALa od tego, kto zapytał
+    
     poll_rx_ts = get_rx_timestamp_u64();
     resp_tx_time1 = (poll_rx_ts + (POLL_RX_TO_RESP_TX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;
     dwt_setdelayedtrxtime(resp_tx_time1);
@@ -25,11 +26,11 @@ void handle_normal_poll(uint8_t sender_id, uint32_t frame_len) {
     dwt_setrxaftertxdelay(RESP_TX_TO_FINAL_RX_DLY_UUS);
     dwt_setrxtimeout(FINAL_RX_TIMEOUT_UUS);
 
-    dwt_setpreambledetecttimeout(PRE_TIMEOUT); // juz nie potrzeba??
+    dwt_setpreambledetecttimeout(PRE_TIMEOUT); // potrzeba??
 
-    tx_resp_msg1[ALL_MSG_SN_IDX] = frame_seq_nb;
-    dwt_writetxdata(sizeof(tx_resp_msg1), tx_resp_msg1, 0);
-    dwt_writetxfctrl(sizeof(tx_resp_msg1), 0, 1);
+    tx_resp_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
+    dwt_writetxdata(sizeof(tx_resp_msg), tx_resp_msg, 0);
+    dwt_writetxfctrl(sizeof(tx_resp_msg), 0, 1);
     Serial.println("\n[KOTWICA] Usłyszałem POLL! Przygotowuję RESP...");
 
     // Wysyła RESP i czekamy na FINAL, RESP musi zostac wyslane delayed,
@@ -52,7 +53,7 @@ void handle_normal_poll(uint8_t sender_id, uint32_t frame_len) {
 
     
             // odebrano FINAL -> Liczymy i odsyłamy REPORT
-            if (memcmp(rx_buffer, rx_final_msg1, ALL_MSG_COMMON_LEN) == 0) {
+            if (memcmp(rx_buffer, rx_final_msg, ALL_MSG_COMMON_LEN) == 0) {
                 uint32_t poll_tx_ts, resp_rx_ts, final_tx_ts;
                 double Ra, Rb, Da, Db;
                 int64_t tof_dtu;
@@ -82,8 +83,8 @@ void handle_normal_poll(uint8_t sender_id, uint32_t frame_len) {
                 tx_report_msg[REPORT_MSG_DIST_IDX + 3] = dist_bytes[3];
 
                 // Zabezpieczenie przed skażeniem pamięci po kalibracji - zmienia adres wysylki
-                tx_report_msg[7] = DID;
-                tx_report_msg[8] = sender_id;
+                tx_report_msg[SENDER_IDX] = ANCHOR_NUM;
+                tx_report_msg[DEST_IDX] = sender_id;
 
                 // I Kotwica wysyła tx_report_msg!
                 dwt_writetxdata(sizeof(tx_report_msg), tx_report_msg, 0);
@@ -112,22 +113,19 @@ float executeTWR(uint8_t target_anchor) {
     float received_distance = -1.0; // Domyślnie ustawiamy na -1.0, co oznacza błąd (timeout lub brak odpowiedzi)
     uint32_t local_status_reg = 0;
 
-    //message header!
-    tx_poll_msg[5] = 'P';
-    tx_poll_msg[6] = 'O';
-    tx_poll_msg[7] = 'L';
-
-    tx_poll_msg[8]   = target_anchor; // Kogo wołam (Kotwica)
-    rx_resp_msg[7]   = target_anchor; // Od kogo czekam na odp (Kotwica)
-    tx_final_msg[7]  = target_anchor; // Do kogo wysyłam FINAL (Kotwica)
-    tx_report_msg[7] = target_anchor; // Od kogo czekam na raport (Kotwica)
+    // POLL message header! already defined
+   
+    tx_poll_msg[DEST_IDX]   = target_anchor; // Kogo wołam (Kotwica)
+    rx_resp_msg[SENDER_IDX]   = target_anchor; // Od kogo czekam na odp (Kotwica)
+    tx_final_msg[DEST_IDX]  = target_anchor; // Do kogo wysyłam FINAL (Kotwica)
+    tx_report_msg[SENDER_IDX] = target_anchor; // Od kogo czekam na raport (Kotwica)
 
 
     // ID kotwicy nadawajacej 
-    rx_resp_msg[8]   = DID;
-    tx_final_msg[8]  = DID;
-    tx_report_msg[8] = DID;
-    tx_poll_msg[10] = DID;
+    rx_resp_msg[SENDER_IDX]   = ANCHOR_NUM;
+    tx_final_msg[SENDER_IDX]  = ANCHOR_NUM;
+    tx_report_msg[SENDER_IDX] = ANCHOR_NUM;
+    tx_poll_msg[SENDER_IDX] = ANCHOR_NUM;
 
     // KROK 1: Wysyłamy wiadomość POLL
     tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
@@ -234,8 +232,7 @@ float executeTWR(uint8_t target_anchor) {
 void send_calib_result_to_tag(uint8_t tag_id, uint8_t target_anchor_id, float distance) {
  
     // Zamiast POL, RES, FIN, nazywamy ją 'C', 'R', 'S' (Calibration Result)
-    uint8_t tx_crs_msg[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'C', 'R', 'S', tag_id, target_anchor_id, 0, 0, 0, 0, 0, 0};
-
+    
     // 2. Wrzucamy nasz wynik kalibracji (float) do paczki
     uint8_t *dist_bytes = (uint8_t*)&distance;
     tx_crs_msg[10] = dist_bytes[0];

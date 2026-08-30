@@ -103,8 +103,10 @@ extern dwt_txconfig_t txconfig_options;
 
 static uint8_t tx_resp_msg[]   = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'E', 'S', 0, 0, 0, 0, 0, 0, 0};
 static uint8_t rx_poll_msg[]   = {0x41, 0x88, 0, 0xCA, 0xDE, 'P', 'O', 'L', 0, 0, 0, 0};
+static uint8_t rx_final_msg[]  = {0x41, 0x88, 0, 0xCA, 0xDE, 'F', 'I', 'N', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
 
 static uint64_t poll_rx_ts, resp_tx_ts, final_rx_ts;
+
 
 
