@@ -91,8 +91,20 @@ static uint8_t frame_seq_nb = 0;
 
 extern dwt_txconfig_t txconfig_options;
 
-// static uint64_t poll_rx_ts, resp_tx_ts, final_rx_ts; // potrzebne?
-// static double tof, distance;
-// #define PRE_TIMEOUT 0
+// ANCHOR CONFIG
+
+#define ANCHOR_NUM 1   // ID tej konkretnej kotwicy - DO ZMIANY JESLI WGRYWAMY NA WIECEJ NIZ JEDNA
+
+#define RX_BUF_LEN 24
+#define POLL_RX_TO_RESP_TX_DLY_UUS 2500
+#define RESP_TX_TO_FINAL_RX_DLY_UUS 150// no blind window after sending resp
+#define FINAL_RX_TIMEOUT_UUS 8000 // dajmy Kotwicy BARDZO DUŻO czasu na matematykę przed FINALem
+#define PRE_TIMEOUT 0 // usefull??
+
+static uint8_t tx_resp_msg[]   = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'E', 'S', 0, 0, 0, 0, 0, 0, 0};
+static uint8_t rx_poll_msg[]   = {0x41, 0x88, 0, 0xCA, 0xDE, 'P', 'O', 'L', 0, 0, 0, 0};
+
+
+static uint64_t poll_rx_ts, resp_tx_ts, final_rx_ts;
 
 
