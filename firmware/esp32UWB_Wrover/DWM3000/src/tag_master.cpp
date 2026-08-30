@@ -206,21 +206,12 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibratio
     float received_distance = -1.0; // Domyślnie ustawiamy na -1.0, co oznacza błąd (timeout lub brak odpowiedzi)
     uint32_t status_reg = 0;
     unsigned long software_watchdog = millis();
-    // 1. PODMIANA NAGŁÓWKA W LOCIE (Trwa nanosekundy!)
-    
-    tx_poll_msg[5] = 'P'; tx_poll_msg[6] = 'O'; tx_poll_msg[7] = 'L';
-   
-    tx_poll_msg[8]   = target_anchor; // Kogo wołam (Kotwica)
-    tx_poll_msg[11] = TAG_ID; // kotwica czyta z tego bajtu SenderID
-    rx_resp_msg[7]   = target_anchor; // Od kogo czekam na odp (Kotwica)
-    tx_final_msg[7]  = target_anchor; // Do kogo wysyłam FINAL (Kotwica)
-    tx_report_msg[7] = target_anchor; // Od kogo czekam na raport (Kotwica)
+ 
+    tx_poll_msg[DEST_IDX]   = target_anchor; // Kogo wołam (Kotwica)
+    tx_poll_msg[SENDER_IDX] = TAG_ID; // SenderID
+    tx_final_msg[DEST_IDX]  = target_anchor; // Do kogo wysyłam FINAL (Kotwica)
+    tx_final_msg[SENDER_IDX] = TAG_ID; // kto wysyla
 
-    // ID TAGA NA INDEKSIE 8 (Zawsze równe 1)
-    rx_resp_msg[8]   = TAG_ID;
-    tx_final_msg[8]  = TAG_ID;
-    tx_report_msg[8] = TAG_ID;
-    
 
     // KROK 1: Wysyłamy wiadomość POLL
     tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
@@ -337,10 +328,10 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibratio
 float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
 
     float distance= -1.0;
-    tx_poll_msg[5] = 'C'; tx_poll_msg[6] = 'A'; tx_poll_msg[7] = 'L';
-    tx_poll_msg[8] = target_anchor;
-    tx_poll_msg[10] = dest_anchor;
-    tx_poll_msg[11] = TAG_ID; //  Podpisujemy rozkaz własnym ID!
+    
+    tx_cal_msg[DEST_IDX] = target_anchor;
+    tx_cal_msg[CAL_TARGET_IDX] = dest_anchor;
+    tx_cal_msg[SENDER_IDX] = TAG_ID; //  Podpisujemy rozkaz własnym ID!
 
     tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb++;
     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
@@ -375,15 +366,14 @@ float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
             }
 
             // Sprawdzamy nagłówek (Czy to telegram CRS od Kotwicy?)
-            if (rx_buffer[5] == 'C' && rx_buffer[6] == 'R' && rx_buffer[7] == 'S' && rx_buffer[8] == TAG_ID) {
+            if (rx_buffer[CMD_IDX] == 'C' && rx_buffer[CMD_IDX+1] == 'R' && rx_buffer[CMD_IDX+2] == 'S' && rx_buffer[DEST_IDX] == TAG_ID) {
                 
-                memcpy(&distance, &rx_buffer[10], 4);
+                memcpy(&distance, &rx_buffer[CRS_MSG_DIST_IDX], sizeof(float)); //wyliczona przez Kotwicę odległość
                 dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK);
                 return distance; // SUKCES!
             }
             else {
-                // To jakaś inna paczka (np. podsłuchany POL lub RESP kotwic). 
-                // Ignorujemy i twardo włączamy nasłuch ponownie!
+                // wasnt awaited cmd ->  must turn on RX listening back
                 dwt_rxenable(DWT_START_RX_IMMEDIATE);
             }
         } // 2. BEZPIECZNIK SPRZĘTOWY (Chroni przed absolutną ciszą)

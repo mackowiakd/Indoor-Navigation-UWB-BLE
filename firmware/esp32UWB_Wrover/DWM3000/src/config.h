@@ -49,25 +49,36 @@ static dwt_config_t config = {
 
 #define TAG_ID 0
 
-// tablice musi miec  miejsce na TAG_ID!
-static uint8_t tx_poll_msg[]   = {0x41, 0x88, 0, 0xCA, 0xDE, 'X', 'X', 'X', 0, 0x21, 0, 0}; //POL or CAL 
-static uint8_t rx_resp_msg[]   = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'E', 0, TAG_ID, 0x10, 0x02, 0, 0, 0, 0};
-static uint8_t tx_final_msg[]  = {0x41, 0x88, 0, 0xCA, 0xDE, 'F', 'I', 0, TAG_ID, 0x23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-static uint8_t tx_report_msg[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'P', 0, TAG_ID, 0x40, 0, 0, 0, 0, 0, 0, 0};
-#define REPORT_MSG_DIST_IDX 11 // Cale miejsce od indeksu 11 jest czyste na naszego Floata!
-
+// --- PARAMETRY RAMKI MAC ---
 #define ALL_MSG_COMMON_LEN 10
-#define ALL_MSG_SN_IDX 2
-#define FINAL_MSG_POLL_TX_TS_IDX 10
-#define FINAL_MSG_RESP_RX_TS_IDX 14
-#define FINAL_MSG_FINAL_TX_TS_IDX 18
-static uint8_t frame_seq_nb = 0;
-#define RX_BUF_LEN 32
+#define ALL_MSG_SN_IDX     2   // Sequence number index
+#define RX_BUF_LEN         32
+
+// --- UNIWERSALNY NAGŁÓWEK ---
+#define CMD_IDX    5
+#define DEST_IDX   8
+#define SENDER_IDX 9
+
+
+// --- INDEKSY PAYLOADU (Od 10 w górę) ---
+#define CAL_TARGET_IDX            10 // Kogo Kotwica 1 ma spingować (dla CAL)
+#define REPORT_MSG_DIST_IDX       10 // Wynik pomiaru (dla REP)
+#define CRS_MSG_DIST_IDX          10 // Wynik kalibracji (dla CRS)
+#define FINAL_MSG_POLL_TX_TS_IDX 10 // Znaczniki TWR
+#define FINAL_MSG_RESP_RX_TS_IDX 14 // Znaczniki TWR
+#define FINAL_MSG_FINAL_TX_TS_IDX 18 // Znaczniki TWR
+
+
+// --- CZYSTE SZABLONY TABLIC ---
+static uint8_t tx_poll_msg[]   = {0x41, 0x88, 0, 0xCA, 0xDE, 'P', 'O', 'L', 0, 0, 0, 0};
+static uint8_t rx_resp_msg[]   = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'E', 'S', 0, 0, 0, 0, 0, 0, 0};
+static uint8_t tx_final_msg[]  = {0x41, 0x88, 0, 0xCA, 0xDE, 'F', 'I', 'N', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static uint8_t tx_report_msg[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'E', 'P', 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static uint8_t tx_cal_msg[]    = {0x41, 0x88, 0, 0xCA, 0xDE, 'C', 'A', 'L', 0, 0, 0, 0};
+static uint8_t tx_crs_msg[]    = {0x41, 0x88, 0, 0xCA, 0xDE, 'C', 'R', 'S', 0, 0, 0, 0, 0, 0, 0, 0};
+
 static uint8_t rx_buffer[RX_BUF_LEN];
-#define SENDER_IDX 11 //nadawca
-#define RECP_IDX 8 //obiorca
-#define CAL_TARGET_IDX 10
-#define CAL_SENDER_IDX 11
+static uint8_t frame_seq_nb = 0;
 
 //PARAMETRY CZASOWE do comm z KOTWICA -> tag init
 #define POLL_TX_TO_RESP_RX_DLY_UUS 150   // Zmienione z 0 na 150: Dajmy chipowi ułamek mikrosekundy na przejście w nasłuch
