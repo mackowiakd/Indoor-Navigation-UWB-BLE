@@ -350,6 +350,7 @@ float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
 
     // Pętla trwa tak dlugo az dpstaniemy CRS albo dobijemy timout a nie gdy dostaniemy 'COS'
     while (true){
+        bool crs_cmd=true;
         // 1. BEZPIECZNIK PROGRAMOWY (Chroni przed ciągłym resetowaniem nasłuchu przez śmieci)
         if (millis() - software_timeout_start > timeout) {
             Serial.println("[TAG-CALIB] Błąd: Software TIMEOUT - Eter zagłuszony śmieciami!");
@@ -371,9 +372,11 @@ float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
                 
                 memcpy(&distance, &rx_buffer[CRS_MSG_DIST_IDX], sizeof(float)); //wyliczona przez Kotwicę odległość
                 dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK);
+                crs_cmd=false; //turn off
                 return distance; // SUKCES!
             }
             else {
+
                 // wasnt awaited cmd ->  must turn on RX listening back
                 dwt_rxenable(DWT_START_RX_IMMEDIATE);
                 Serial.printf("[TAG] To nie CRS Dostałem: %c%c%c (ID: 0x%02X)\n", 
@@ -381,13 +384,14 @@ float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
             }
         } 
       // 2. BEZPIECZNIK SPRZĘTOWY (Chroni przed absolutną ciszą lub zakłóceniami)
-        else if (local_status_reg & (SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR)) {
+        if (local_status_reg & (SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR) && crs_cmd==true) {
             Serial.println("[TAG-CALIB] Ostrzeżenie: Błąd sprzętowy RX - Wznawiam nasłuch...");
             
             // MUSIMY wyczyścić podniesione flagi błędu w radarze:
             dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
             // MUSIMY ponownie włączyć antenę, bo po błędzie radar się usypia:
             dwt_rxenable(DWT_START_RX_IMMEDIATE);
+            software_timeout_start = millis(); // restet timer
         }
         taskYIELD();
     }
