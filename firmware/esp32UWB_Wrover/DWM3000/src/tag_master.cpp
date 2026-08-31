@@ -334,24 +334,24 @@ float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
     tx_cal_msg[CAL_TARGET_IDX] = dest_anchor;
     tx_cal_msg[SENDER_IDX] = TAG_ID; //  Podpisujemy rozkaz własnym ID!
 
-    tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb++;
+    tx_cal_msg[ALL_MSG_SN_IDX] = frame_seq_nb++;
     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
-    dwt_writetxdata(sizeof(tx_poll_msg), tx_poll_msg, 0);
-    dwt_writetxfctrl(sizeof(tx_poll_msg), 0, 1);
-
-    // TWOJE ROZWIĄZANIE: Polegamy w 100% na sprzętowym timeoucie radaru!
+    dwt_writetxdata(sizeof(tx_cal_msg), tx_cal_msg, 0);
+    dwt_writetxfctrl(sizeof(tx_cal_msg), 0, 1);
+    
     dwt_setrxaftertxdelay(0); 
-    dwt_setrxtimeout(CALIB_RX_TIMEOUT_UUS);      
+    dwt_setrxtimeout(0);  //polegamy tylko na licznku milis()    
     
     dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
 
     uint32_t local_status_reg = 0;
     unsigned long software_timeout_start = millis();
+    unsigned timeout =1000;
 
     // Pętla trwa tak dlugo az dpstaniemy CRS albo dobijemy timout a nie gdy dostaniemy 'COS'
     while (true){
         // 1. BEZPIECZNIK PROGRAMOWY (Chroni przed ciągłym resetowaniem nasłuchu przez śmieci)
-        if (millis() - software_timeout_start > 500) {
+        if (millis() - software_timeout_start > timeout) {
             Serial.println("[TAG-CALIB] Błąd: Software TIMEOUT - Eter zagłuszony śmieciami!");
             break; 
         }
@@ -376,11 +376,18 @@ float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
             else {
                 // wasnt awaited cmd ->  must turn on RX listening back
                 dwt_rxenable(DWT_START_RX_IMMEDIATE);
+                Serial.printf("[TAG] To nie CRS Dostałem: %c%c%c (ID: 0x%02X)\n", 
+                           rx_buffer[5], rx_buffer[6], rx_buffer[7], rx_buffer[8]);
             }
-        } // 2. BEZPIECZNIK SPRZĘTOWY (Chroni przed absolutną ciszą)
-        else if (local_status_reg & SYS_STATUS_ALL_RX_TO) {
-            // HW sam podniósł flagę TIMEOUT
-            Serial.println("[TAG-CALIB] Błąd: Hardware TIMEOUT - Kotwica nie przysłała telegramu CRS na czas.");
+        } 
+      // 2. BEZPIECZNIK SPRZĘTOWY (Chroni przed absolutną ciszą lub zakłóceniami)
+        else if (local_status_reg & (SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR)) {
+            Serial.println("[TAG-CALIB] Ostrzeżenie: Błąd sprzętowy RX - Wznawiam nasłuch...");
+            
+            // MUSIMY wyczyścić podniesione flagi błędu w radarze:
+            dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
+            // MUSIMY ponownie włączyć antenę, bo po błędzie radar się usypia:
+            dwt_rxenable(DWT_START_RX_IMMEDIATE);
         }
         taskYIELD();
     }

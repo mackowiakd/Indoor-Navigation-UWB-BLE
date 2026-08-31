@@ -86,14 +86,11 @@ static uint8_t frame_seq_nb = 0;
 #define RESP_RX_TO_FINAL_TX_DLY_UUS 4000 // dajmy Kotwicy BARDZO DUŻO czasu na matematykę przed FINALem
 #define RESP_delay 8000 //czekamy na resp od kotwicy do 8ms
 
-
-#define CALIB_RX_TIMEOUT_UUS 100000 // 100ms czasu na wykonanie całego zadania przez Kotwice
-
 extern dwt_txconfig_t txconfig_options;
 
 // ANCHOR CONFIG
 
-#define ANCHOR_NUM 2   // ID tej konkretnej kotwicy - DO ZMIANY JESLI WGRYWAMY NA WIECEJ NIZ JEDNA
+#define ANCHOR_NUM 1   // ID tej konkretnej kotwicy - DO ZMIANY JESLI WGRYWAMY NA WIECEJ NIZ JEDNA
 
 #define RX_BUF_LEN 24
 #define POLL_RX_TO_RESP_TX_DLY_UUS 2500

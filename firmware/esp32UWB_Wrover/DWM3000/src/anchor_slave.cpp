@@ -229,8 +229,9 @@ float executeTWR(uint8_t target_anchor) {
 
 void send_calib_result_to_tag(uint8_t tag_id, uint8_t target_anchor_id, float distance) {
  
-    // Zamiast POL, RES, FIN, nazywamy ją 'C', 'R', 'S' (Calibration Result)
-    
+    // 1. Zgodnie z protokołem, wypełniamy uniwersalny nagłówek
+    tx_crs_msg[DEST_IDX]= tag_id;
+    tx_crs_msg[SENDER_IDX] = ANCHOR_NUM; // Od kogo (Kotwica 1)
     // 2. Wrzucamy nasz wynik kalibracji (float) do paczki
     uint8_t *dist_bytes = (uint8_t*)&distance;
     tx_crs_msg[CRS_MSG_DIST_IDX] = dist_bytes[0];
@@ -256,7 +257,6 @@ void send_calib_result_to_tag(uint8_t tag_id, uint8_t target_anchor_id, float di
 }
 // anchor master (tag impostor)
 void handle_calibration_delegation(uint8_t target_anchor_id, uint8_t tag_id) {
-    
     
     // 1. ZMIENIAM SIĘ W TAGA (To jest dokładna kopia funkcji executeTWR tag.cpp)
     // Wysyłam 'POL' do target_anchor_id (bo Kotwica 2 zareaguje na to automatycznie!)
