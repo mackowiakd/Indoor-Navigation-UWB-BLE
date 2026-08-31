@@ -247,8 +247,7 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibratio
         rx_buffer[ALL_MSG_SN_IDX] = 0; // Usunięcie numeru sekwencyjnego do porównania- jakiego prownania??
         
         // RESP from anchor deliverd, sending FINAL
-        if (memcmp(rx_buffer, rx_resp_msg, ALL_MSG_COMMON_LEN) == 0) {
-        
+       if (rx_buffer[CMD_IDX] == 'R' && rx_buffer[CMD_IDX+1] == 'E' && rx_buffer[CMD_IDX+2] == 'S' && rx_buffer[DEST_IDX] == TAG_ID) {
             uint32_t final_tx_time, poll_tx_ts, resp_rx_ts, final_tx_ts;
 
             poll_tx_ts = dwt_readtxtimestamplo32();
@@ -295,10 +294,9 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibratio
                     rx_buffer[ALL_MSG_SN_IDX] = 0;
 
                     // Czy to jest REPORT?
-                    if (memcmp(rx_buffer, tx_report_msg, ALL_MSG_COMMON_LEN) == 0) {
-
+                   if (rx_buffer[CMD_IDX] == 'R' && rx_buffer[CMD_IDX+1] == 'E' && rx_buffer[CMD_IDX+2] == 'P' && rx_buffer[DEST_IDX] == TAG_ID) {
                         Serial.println("[TAG] Odebrano REPORT od Kotwicy! Rozpakowuję...");
-                        memcpy(&received_distance, &rx_buffer[REPORT_MSG_DIST_IDX], 4);
+                        memcpy(&received_distance, &rx_buffer[REPORT_MSG_DIST_IDX], sizeof(float));
                       
                     }
                 } else {
@@ -310,7 +308,10 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibratio
                 Serial.println("[TAG][BŁĄD] Za wolny procesor! Nie zdążyłem wysłać FINAL w oknie czasowym.");
             }
         } else {
-            Serial.println("[TAG] Odebrano paczkę, ale to nie było RESP od Kotwicy 1.");
+            
+            Serial.printf("[TAG] To nie było RESP. Dostałem: %c%c%c (ID: 0x%02X)\n", 
+                           rx_buffer[5], rx_buffer[6], rx_buffer[7], rx_buffer[8]);
+        
         }
     } else {
         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);

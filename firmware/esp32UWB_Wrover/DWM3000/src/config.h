@@ -93,7 +93,7 @@ extern dwt_txconfig_t txconfig_options;
 
 // ANCHOR CONFIG
 
-#define ANCHOR_NUM 1   // ID tej konkretnej kotwicy - DO ZMIANY JESLI WGRYWAMY NA WIECEJ NIZ JEDNA
+#define ANCHOR_NUM 2   // ID tej konkretnej kotwicy - DO ZMIANY JESLI WGRYWAMY NA WIECEJ NIZ JEDNA
 
 #define RX_BUF_LEN 24
 #define POLL_RX_TO_RESP_TX_DLY_UUS 2500

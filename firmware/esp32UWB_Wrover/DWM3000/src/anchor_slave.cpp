@@ -53,7 +53,7 @@ void handle_normal_poll(uint8_t sender_id, uint32_t frame_len) {
 
     
             // odebrano FINAL -> Liczymy i odsyłamy REPORT
-            if (memcmp(rx_buffer, rx_final_msg, ALL_MSG_COMMON_LEN) == 0) {
+           if (rx_buffer[CMD_IDX] == 'F' && rx_buffer[CMD_IDX+1] == 'I' && rx_buffer[CMD_IDX+2] == 'N' && rx_buffer[DEST_IDX] == ANCHOR_NUM) {
                 uint32_t poll_tx_ts, resp_rx_ts, final_tx_ts;
                 double Ra, Rb, Da, Db;
                 int64_t tof_dtu;
@@ -160,9 +160,8 @@ float executeTWR(uint8_t target_anchor) {
         }
         rx_buffer[ALL_MSG_SN_IDX] = 0; // Usunięcie numeru sekwencyjnego do porównania- jakiego prownania??
         
-        // RESP from anchor deliverd, sending FINAL
-        if (memcmp(rx_buffer, rx_resp_msg, ALL_MSG_COMMON_LEN) == 0) {
-        
+        // RESP from tag deliverd, sending FINAL
+        if (rx_buffer[CMD_IDX] == 'R' && rx_buffer[CMD_IDX+1] == 'E' && rx_buffer[CMD_IDX+2] == 'S' && rx_buffer[DEST_IDX] == ANCHOR_NUM) {
             uint32_t final_tx_time, poll_tx_ts, resp_rx_ts, final_tx_ts;
 
             poll_tx_ts = dwt_readtxtimestamplo32();
@@ -208,10 +207,9 @@ float executeTWR(uint8_t target_anchor) {
                     rx_buffer[ALL_MSG_SN_IDX] = 0;
 
                     // Czy to jest REPORT?
-                    if (memcmp(rx_buffer, tx_report_msg, ALL_MSG_COMMON_LEN) == 0) {
-
+                   if (rx_buffer[CMD_IDX] == 'R' && rx_buffer[CMD_IDX+1] == 'E' && rx_buffer[CMD_IDX+2] == 'P' && rx_buffer[DEST_IDX] == ANCHOR_NUM) {
                         Serial.println("[TAG] Odebrano REPORT od Kotwicy! Rozpakowuję...");
-                        memcpy(&received_distance, &rx_buffer[REPORT_MSG_DIST_IDX], 4);
+                        memcpy(&received_distance, &rx_buffer[REPORT_MSG_DIST_IDX], sizeof(float));
                       
                     } 
                 } 
@@ -235,13 +233,13 @@ void send_calib_result_to_tag(uint8_t tag_id, uint8_t target_anchor_id, float di
     
     // 2. Wrzucamy nasz wynik kalibracji (float) do paczki
     uint8_t *dist_bytes = (uint8_t*)&distance;
-    tx_crs_msg[10] = dist_bytes[0];
-    tx_crs_msg[11] = dist_bytes[1];
-    tx_crs_msg[12] = dist_bytes[2];
-    tx_crs_msg[13] = dist_bytes[3];
+    tx_crs_msg[CRS_MSG_DIST_IDX] = dist_bytes[0];
+    tx_crs_msg[CRS_MSG_DIST_IDX+1] = dist_bytes[1];
+    tx_crs_msg[CRS_MSG_DIST_IDX+2] = dist_bytes[2];
+    tx_crs_msg[CRS_MSG_DIST_IDX+3] = dist_bytes[3];
 
     // 3. Numerujemy paczkę
-    tx_crs_msg[2] = frame_seq_nb++;
+    tx_crs_msg[ALL_MSG_SN_IDX] = frame_seq_nb++;
 
     // 4. Załadowanie do anteny (0 na końcu oznacza zwykłe dane, bez stempli czasowych TWR!)
     dwt_writetxdata(sizeof(tx_crs_msg), tx_crs_msg, 0);
@@ -335,12 +333,12 @@ void loop() {
         // =======================================================
         // ROZDZIELACZ LOGIKI (DISPATCHER)
         // =======================================================
-        sender_id=rx_buffer[11];
+        sender_id=rx_buffer[SENDER_IDX];
         // Sprawdzamy,  czy jest DO NAS
-        if ( rx_buffer[8] == DID) {
+        if ( rx_buffer[DEST_IDX] == ANCHOR_NUM) {
             
             // KTOŚ DO NAS KRZYCZY - SPRAWDZAMY CO CHCE:
-            if (rx_buffer[5] == 'P' && rx_buffer[6] == 'O' && rx_buffer[7] == 'L') {
+            if (rx_buffer[CMD_IDX] == 'P' && rx_buffer[CMD_IDX+1] == 'O' && rx_buffer[CMD_IDX+2] == 'L') {
                 
                 Serial.println("\n[KOTWICA] Odebrano POLL od Taga! Wysyłam RESP...");
                
@@ -348,7 +346,7 @@ void loop() {
             
                 
             } 
-            else if (rx_buffer[5] == 'C' && rx_buffer[6] == 'A' && rx_buffer[7] == 'L') {
+            else if (rx_buffer[CMD_IDX] == 'C' && rx_buffer[CMD_IDX+1] == 'A' && rx_buffer[CMD_IDX+2] == 'L') {
                 
                 Serial.println("\n[KOTWICA] 🛠 Dostałem rozkaz KALIBRACJI! Zmieniam się w Inicjatora!");
                 uint8_t target_anchor_id = rx_buffer[10]; // To przemyciliśmy w ESP32!
