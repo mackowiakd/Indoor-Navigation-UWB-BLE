@@ -70,11 +70,11 @@ static dwt_config_t config = {
 
 
 // --- CZYSTE SZABLONY TABLIC ---
-static uint8_t tx_poll_msg[]   = {0x41, 0x88, 0, 0xCA, 0xDE, 'P', 'O', 'L', 0, 0, 0, 0};
-static uint8_t rx_resp_msg[]   = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'E', 'S', 0, 0, 0, 0, 0, 0, 0};
+static uint8_t tx_poll_msg[]   = {0x41, 0x88, 0, 0xCA, 0xDE, 'P', 'O', 'L', 0, 0, 0, 0, 0, 0}; // 14 bajtów
+static uint8_t tx_cal_msg[]    = {0x41, 0x88, 0, 0xCA, 0xDE, 'C', 'A', 'L', 0, 0, 0, 0, 0, 0}; // 14 bajtów
+static uint8_t rx_resp_msg[]   = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'E', 'S', 0, 0, 0, 0, 0, 0, 0}; //16 bajtów
 static uint8_t tx_final_msg[]  = {0x41, 0x88, 0, 0xCA, 0xDE, 'F', 'I', 'N', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 static uint8_t tx_report_msg[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'E', 'P', 0, 0, 0, 0, 0, 0, 0, 0, 0};
-static uint8_t tx_cal_msg[]    = {0x41, 0x88, 0, 0xCA, 0xDE, 'C', 'A', 'L', 0, 0, 0, 0};
 static uint8_t tx_crs_msg[]    = {0x41, 0x88, 0, 0xCA, 0xDE, 'C', 'R', 'S', 0, 0, 0, 0, 0, 0, 0, 0};
 
 static uint8_t rx_buffer[RX_BUF_LEN];
@@ -90,7 +90,7 @@ extern dwt_txconfig_t txconfig_options;
 
 // ANCHOR CONFIG
 
-#define ANCHOR_NUM 1   // ID tej konkretnej kotwicy - DO ZMIANY JESLI WGRYWAMY NA WIECEJ NIZ JEDNA
+#define ANCHOR_NUM 2   // ID tej konkretnej kotwicy - DO ZMIANY JESLI WGRYWAMY NA WIECEJ NIZ JEDNA
 
 #define RX_BUF_LEN 24
 #define POLL_RX_TO_RESP_TX_DLY_UUS 2500
@@ -99,8 +99,8 @@ extern dwt_txconfig_t txconfig_options;
 #define PRE_TIMEOUT 0 // usefull??
 
 static uint8_t tx_resp_msg[]   = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'E', 'S', 0, 0, 0, 0, 0, 0, 0};
-static uint8_t rx_poll_msg[]   = {0x41, 0x88, 0, 0xCA, 0xDE, 'P', 'O', 'L', 0, 0, 0, 0};
-static uint8_t rx_final_msg[]  = {0x41, 0x88, 0, 0xCA, 0xDE, 'F', 'I', 'N', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+// static uint8_t rx_poll_msg[]   = {0x41, 0x88, 0, 0xCA, 0xDE, 'P', 'O', 'L', 0, 0, 0, 0};
+// static uint8_t rx_final_msg[]  = {0x41, 0x88, 0, 0xCA, 0xDE, 'F', 'I', 'N', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
 
 static uint64_t poll_rx_ts, resp_tx_ts, final_rx_ts;
