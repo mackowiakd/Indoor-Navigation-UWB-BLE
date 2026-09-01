@@ -309,8 +309,7 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibratio
             }
         } else {
             
-            Serial.printf("[TAG] To nie było RESP. Dostałem: %c%c%c (ID: 0x%02X)\n", 
-                           rx_buffer[5], rx_buffer[6], rx_buffer[7], rx_buffer[8]);
+            Serial.printf("[TAG] To nie było RESP. Dostałem: %c%c%c ID: %i\n",  rx_buffer[5], rx_buffer[6], rx_buffer[7], rx_buffer[8]);
         
         }
     } else {
@@ -376,11 +375,10 @@ float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
                 return distance; // SUKCES!
             }
             else {
-
                 // wasnt awaited cmd ->  must turn on RX listening back
-                dwt_rxenable(DWT_START_RX_IMMEDIATE);
-                Serial.printf("[TAG] To nie CRS Dostałem: %c%c%c (ID: 0x%02X)\n", 
-                           rx_buffer[5], rx_buffer[6], rx_buffer[7], rx_buffer[8]);
+                dwt_rxenable(DWT_START_RX_IMMEDIATE); // czy tez potrzebne czyszczenie flag bledow radaru?
+                Serial.printf("[TAG] To nie CRS Dostałem: %c%c%c ID: %i\n", rx_buffer[5], rx_buffer[6], rx_buffer[7], rx_buffer[8]);
+                software_timeout_start = millis(); // restet timer
             }
         } 
       // 2. BEZPIECZNIK SPRZĘTOWY (Chroni przed absolutną ciszą lub zakłóceniami)

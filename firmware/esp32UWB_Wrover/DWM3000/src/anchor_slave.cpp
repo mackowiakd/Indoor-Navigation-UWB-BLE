@@ -17,7 +17,6 @@ void handle_normal_poll(uint8_t sender_id, uint32_t frame_len) {
     uint32_t local_status_reg = 0;
     tx_resp_msg[DEST_IDX] = sender_id;  // Wysyłam RESP do tego, kto zapytał
     tx_resp_msg[SENDER_IDX]= ANCHOR_NUM ;
-    rx_final_msg[SENDER_IDX] = sender_id; // Będę oczekiwał FINALa od tego, kto zapytał
     
     poll_rx_ts = get_rx_timestamp_u64();
     resp_tx_time1 = (poll_rx_ts + (POLL_RX_TO_RESP_TX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;
@@ -116,20 +115,16 @@ float executeTWR(uint8_t target_anchor) {
     // POLL message header! already defined
    
     tx_poll_msg[DEST_IDX]   = target_anchor; // Kogo wołam (Kotwica)
-    rx_resp_msg[SENDER_IDX]   = target_anchor; // Od kogo czekam na odp (Kotwica)
     tx_final_msg[DEST_IDX]  = target_anchor; // Do kogo wysyłam FINAL (Kotwica)
-    tx_report_msg[SENDER_IDX] = target_anchor; // Od kogo czekam na raport (Kotwica)
-
 
     // ID kotwicy nadawajacej 
-    rx_resp_msg[SENDER_IDX]   = ANCHOR_NUM;
     tx_final_msg[SENDER_IDX]  = ANCHOR_NUM;
-    tx_report_msg[SENDER_IDX] = ANCHOR_NUM;
     tx_poll_msg[SENDER_IDX] = ANCHOR_NUM;
 
     // KROK 1: Wysyłamy wiadomość POLL
     tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
     frame_seq_nb++; //inkrementacja numeru paczki 
+    
     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
     dwt_writetxdata(sizeof(tx_poll_msg), tx_poll_msg, 0);
     dwt_writetxfctrl(sizeof(tx_poll_msg), 0, 1); 
@@ -143,8 +138,7 @@ float executeTWR(uint8_t target_anchor) {
 
     // Czekamy na odpowiedź RESP od Tagu
     while (!((local_status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
-    taskYIELD();  //oddaje procesor zadaniom z tym samym lub wyższym priorytetem (
-    }
+     }
     // 2. Coś przyleciało do anteny! -> zmiana na TAG initialized TWR czyli my pytamy 
     //po ID z naszej listy urządzeń docelowych (np. POLL do 0x0001)
 
@@ -192,8 +186,8 @@ float executeTWR(uint8_t target_anchor) {
             if (dwt_starttx(DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED) == DWT_SUCCESS) {
 
                 // >>> now we can print as task for uwb are already launched  <<<
-                Serial.println("[TAG] Poprawne RESP -> Wysłano FINAL.");
-                Serial.println("[TAG] Czekam na REPORT od Kotwicy...");
+                Serial.println("[anch_master] Poprawne RESP -> Wysłano FINAL.");
+                Serial.println("[anch_master] Czekam na REPORT od taga...");
                 
                 // 3. CZEKAMY NA PACZKĘ "REPORT" OD KOTWICY!
                 while (!((local_status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
@@ -338,7 +332,7 @@ void loop() {
         if ( rx_buffer[DEST_IDX] == ANCHOR_NUM) {
             
             // KTOŚ DO NAS KRZYCZY - SPRAWDZAMY CO CHCE:
-            if (rx_buffer[CMD_IDX] == 'P' && rx_buffer[CMD_IDX+1] == 'O' && rx_buffer[CMD_IDX+2] == 'L') {
+            if (rx_buffer[CMD_IDX] == 'P' && rx_buffer[CMD_IDX+1] == 'O' && rx_buffer[CMD_IDX+2] == 'L' && rx_buffer[DEST_IDX] == ANCHOR_NUM) {
                 
                 Serial.println("\n[KOTWICA] Odebrano POLL od Taga! Wysyłam RESP...");
                
@@ -346,10 +340,10 @@ void loop() {
             
                 
             } 
-            else if (rx_buffer[CMD_IDX] == 'C' && rx_buffer[CMD_IDX+1] == 'A' && rx_buffer[CMD_IDX+2] == 'L') {
+            else if (rx_buffer[CMD_IDX] == 'C' && rx_buffer[CMD_IDX+1] == 'A' && rx_buffer[CMD_IDX+2] == 'L' && rx_buffer[DEST_IDX] == ANCHOR_NUM) {
                 
                 Serial.println("\n[KOTWICA] 🛠 Dostałem rozkaz KALIBRACJI! Zmieniam się w Inicjatora!");
-                uint8_t target_anchor_id = rx_buffer[10]; // To przemyciliśmy w ESP32!
+                uint8_t target_anchor_id = rx_buffer[CAL_TARGET_IDX]; // To przemyciliśmy w ESP32! - ZNALAZLAM BALD 
                 
                 handle_calibration_delegation(target_anchor_id, sender_id);
                 
