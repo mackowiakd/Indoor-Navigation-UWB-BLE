@@ -52,9 +52,40 @@ class ThreeAnchorTrigonometryStrategy : CalibrationStrategy {
 class AutoCalibrationEngine {
     // Pamięć podręczna na kotwice, które aktualnie każemy kalibrować ESP32
     private var currentCalibrationAnchors: List<IoTDevice> = emptyList()
+    private var currentCalibrationTags: List<IoTDevice> = emptyList()
 
-    fun prepareCalibration(anchors: List<IoTDevice>) {
+    var isCalibratingTag = false
+        private set
+    var targetTagMac: String? = null
+        private set
+
+    private val distanceBuffer = mutableMapOf<String, MutableList<Double>>()
+
+    fun startTagCalibration(tagMac: String) {
+        targetTagMac = tagMac
+        distanceBuffer.clear()
+        isCalibratingTag = true
+    }
+
+    // Wywoływane dla każdego pomiaru UWB. Zwraca wyniki, gdy zbierze dość danych.
+    fun processTagMeasurement(anchorId: String, distance: Double): Map<String, Double>? {
+        if (!isCalibratingTag) return null
+
+        distanceBuffer.getOrPut(anchorId) { mutableListOf() }.add(distance)
+
+        // Sprawdzamy czy mamy np. po 10 próbek z 3 różnych kotwic
+//        if (hasEnoughSamples(distanceBuffer)) {
+//            isCalibratingTag = false
+//            return calculateTrilateration(distanceBuffer) // Zwraca gotowe Map("global_x" to X, "global_y" to Y)
+//        }
+        return null
+    }
+    // ... tu funkcje hasEnoughSamples i calculateTrilateration ...
+
+    // ANCHORS
+    fun prepareCalibration(anchors: List<IoTDevice>, tags:List<IoTDevice>) {
         currentCalibrationAnchors = anchors
+        currentCalibrationTags= tags
     }
 
     fun performCalibration(distanceMatrix: Array<DoubleArray>, anchors: List<IoTDevice>): List<IoTDevice> {
@@ -121,5 +152,17 @@ class AutoCalibrationEngine {
         }
         // Zwracamy wynik natychmiastowego przeliczenia algorytmu
         return performCalibration(distanceMatrix, currentCalibrationAnchors)
+    }
+
+    fun calibrateTags() {
+        /*Mając 3 uśrednione odległości ($d_1, d_2, d_3$) do 3 kotwic o znanych pozycjach
+        ($(x_1, y_1), (x_2, y_2), (x_3, y_3)$), rozwiązujemy układ równań dla 3 okręgów.
+
+         wywolujemy na tym co zwroci  autoCalibrationEngine.processCalibrationData(rawData) w MainActivity
+        // Zwracamy wynik natychmiastowego przeliczenia algorytmu
+        return performCalibration(distanceMatrix, currentCalibrationAnchors)
+    }
+
+         */
     }
 }

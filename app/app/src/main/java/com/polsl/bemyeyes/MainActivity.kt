@@ -75,11 +75,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        bleManager.onCalibrationResultReceived = { rawData ->
-            runOnUiThread {
-                autoCalibrationEngine.processCalibrationData(rawData) // Wywołuje funkcję z Kroku 2
-            }
-        }
+
         // W MainActivity.kt
         lifecycleScope.launch {
             fetchDatabase()
@@ -191,14 +187,20 @@ class MainActivity : ComponentActivity() {
 
                                 val zoneAnchors = topologyDatabase.getDevicesForLocation(locationId)
                                     .filter { it.deviceType == "UWB_ANCHOR" }
+                                val zoneTags = topologyDatabase.getDevicesForLocation(locationId)
+                                    .filter { it.deviceType == "TAG_BLE" }
+
 
                                 if (zoneAnchors.size >= 2) {
-                                    // 1. Przekazujemy kotwice do silnika, żeby pamiętał, co kalibrujemy
-                                    autoCalibrationEngine.prepareCalibration(zoneAnchors)
+                                     // 1. Przekazujemy kotwice do silnika, żeby pamiętał, co kalibrujemy
+                                    autoCalibrationEngine.prepareCalibration(zoneAnchors, zoneTags)
 
                                     // 2. Wysyłamy komendę do ESP32 i czekamy na asynchroniczny odzew w callbacku
                                     bleManager.sendFilterToEsp(zoneAnchors, "CALIB")
                                     appToEspLogs.add(0, "⏳ Wysłano żądanie do ESP32. Oczekiwanie na pomiary UWB...")
+                                    //i tu robimy drugie zadanie pomiaru (dla 3 > kotwic w naszej lokalizacji => sprawdzamuy czy jest tyle dostepnych
+                                    //jesi nie to zwracamy -1 jako not possible,
+                                    //w sliniku AuCalib dodajemy funkcje ktora z przetwrza te 3 pomiary z kotwicy i nadaje tagowi
 
                                 } else {
                                     appToEspLogs.add(0, "❌ Za mało kotwic w strefie do kalibracji (wymagane min. 2)")

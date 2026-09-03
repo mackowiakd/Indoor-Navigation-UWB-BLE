@@ -20,6 +20,7 @@ import java.util.UUID
 @SuppressLint("MissingPermission")
 class BleConnectionManager(
     private val routingEngine: NavigationRoutingEngine,
+    private val autoCalibrationEngine: AutoCalibrationEngine,
     private val onLogUpdate: (String) -> Unit) {
 
     private var connectedGatt: BluetoothGatt? = null
@@ -27,7 +28,6 @@ class BleConnectionManager(
     private var currentPayloadLimit: Int = 20
     //  Callback  dla wyników kalibracji
     var onCalibrationResultReceived: ((String) -> Unit)? = null
-
     // Odpowiednik statycznych zmiennych z Javy (w Kotlinie trzymane w companion object)
     companion object {
         private const val TAG = "BLE_COMM"
@@ -128,7 +128,6 @@ class BleConnectionManager(
         if (payload.startsWith("CALIB_RES:")) {
             val cleanData = payload.removePrefix("CALIB_RES:")
             postLog(" Odbiór danych kalibracyjnych: $cleanData")
-
             // Wyrzucamy tekst (np. "1_2=11.45;") wyżej do MainActivity
             onCalibrationResultReceived?.invoke(cleanData)
 
@@ -186,6 +185,21 @@ class BleConnectionManager(
                         android.os.Handler(android.os.Looper.getMainLooper()).post {
                             routingEngine.processNewTelemetryData(id, dist)
 
+                    }
+                    if (autoCalibrationEngine.isCalibratingTag) {
+                        // TRYB KALIBRACJI: Dane lecą do bufora
+                        val coordinates = autoCalibrationEngine.processTagMeasurement(id, dist)
+                        if (coordinates != null) {
+                            // Zwracamy wynik wyżej do zapisu (np. przez callback onTagCalibrated)
+                           // onTagCalibrated?.invoke(autoCalibrationEngine.targetTagMac!!, coordinates)
+                        }
+                    } else {
+                        // TRYB NAWIGACJI: Stary kod, dane lecą do silnika routingu
+                        val newDevicesToSend = routingEngine.processScannedDevice(id, dist)
+                        // ...
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            routingEngine.processNewTelemetryData(id, dist)
+                        }
                     }
                     //call calculateUserPosition2D
                 }
