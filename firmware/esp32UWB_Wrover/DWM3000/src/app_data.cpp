@@ -9,6 +9,7 @@ Znak = -> "Aha, to jest pomiar, wrzucam do bazy danych".
 */
 #include "app_data.h"
 
+bool isCalibrationCommand = false; // Globalna flaga, która sygnalizuje TaskUWB, że mamy tryb kalibracji
 // Inicjalizacja globalnej instancji
 AppDataManager appData;
 
@@ -33,13 +34,43 @@ bool AppDataManager::parseBlePayload(String payload) {
         Serial.println("[AppData] 🧹 SYSTEM ZRESETOWANY! Wracam do trybu nasłuchu (Scout/Cold Start).");
         return true; // Kończymy funkcję, nie parsujemy dalej!
     }
-    
+
+    // ==========================================================
+    // DODANY KOD: OBSŁUGA KOMENDY KALIBRACJI (np. CALIB:0x0001,0x0002)
+    // ==========================================================
+    if (payload.startsWith("CALIB:")) {
+        String calibStr = payload.substring(6); // Wycinamy "CALIB:"
+        
+        std::lock_guard<std::mutex> lock(dataMutex);
+        calibration_anchors.clear();
+        
+        int commaIndex;
+        while ((commaIndex = calibStr.indexOf(',')) != -1) {
+            String idStr = calibStr.substring(0, commaIndex);
+            idStr.trim();
+            if (idStr.length() > 0) {
+                uint8_t parsedId = (uint8_t)strtol(idStr.c_str(), NULL, 16);
+                calibration_anchors.push_back(parsedId);
+            }
+            calibStr = calibStr.substring(commaIndex + 1);
+        }
+        // Ostatni element
+        calibStr.trim();
+        if (calibStr.length() > 0) {
+            uint8_t parsedId = (uint8_t)strtol(calibStr.c_str(), NULL, 16);
+            calibration_anchors.push_back(parsedId);
+        }
+
+        Serial.printf("[AppData] 🛠 Tryb KALIBRACJI uruchomiony dla %d kotwic.\n", calibration_anchors.size());
+        isCalibrationCommand = true; // Zmieniamy stan globalny dla Core 1 (TaskUWB)
+        return true; // Kończymy! Nie ruszamy standardowych wektorów nawigacji!
+    }
 
     int uwbIndex = payload.indexOf("U:");
     int bleIndex = payload.indexOf(";B:");
 
     if (uwbIndex == -1 || bleIndex == -1) {
-        Serial.println("[AppData][ERR] Zły format! Oczekiwano np. U_1=4.20;B_ff:ff:12:b1:64:d1=3.10");
+         Serial.println("[AppData][ERR] Zły format! Oczekiwano np. U_1=4.20;B_ff:ff:12:b1:64:d1=3.10");
         return false;
     }
 
@@ -128,14 +159,14 @@ void AppDataManager::updateUwbDistance(uint8_t anchorId, float newDist) {
     }
 };
 
-/*used by TaskNotify() to prepare payload for smartphone*/
+/*  used by TaskNotify() to prepare payload for smartphone  */
 String AppDataManager::getAggregatedData() {
     String payload = "";
     std::lock_guard<std::mutex> lock(dataMutex);
     uint32_t current_time = millis(); // Pobieramy czas w tym ułamku sekundy
     const uint32_t TIMEOUT_MS = 2500; // 2.5 sekundy bez sygnału to śmierć taga
 
-    // 1. Sklejamy odległości Kotwic UWB (np. U_1=2.45;U_2=5.10;)
+    // 1. Sklejamy odległości Kotwic UWB (np. U_0x001=2.45;U_0x002=5.10;)
     for (const auto& anchor : active_uwb_anchors) {
         if (anchor.distance > 0)  //&& (current_time - anchor.last_seen_ms > TIMEOUT_MS))
         {
@@ -144,8 +175,8 @@ String AppDataManager::getAggregatedData() {
             snprintf(hexBuf, sizeof(hexBuf), "0x%04X", anchor.id);
             
             payload += "U_" + String(hexBuf) + "=" + String(anchor.distance, 2) + ";";
-            // %04X oznacza: "Wydrukuj jako HEX (X), użyj 4 znaków (4), brakujące uzupełnij zerami (0)"
-            Serial.printf("0x%04X ", anchor.id);
+    
+            Serial.printf("0x%04X ", anchor.id);  // %04X oznacza: "Wydrukuj jako HEX (X), użyj 4 znaków (4), brakujące uzupełnij zerami (0)"
         }
     }
     
@@ -153,7 +184,7 @@ String AppDataManager::getAggregatedData() {
         if (device.distance > 0) //&& (current_time - device.last_seen_ms > TIMEOUT_MS))
         {
             // Wysyłamy PEŁNY MAC. Używamy znaku '=' żeby oddzielić MAC od dystansu!
-            // Format docelowy: UWB:2.45;BLE_ff:ff:12:b1:64:d1=1.50
+            // Format docelowy: ;BLE_ff:ff:12:b1:64:d1=1.50
             payload += "B_" + String(device.mac.c_str()) + "=" + String(device.distance, 2)+ ";";
             Serial.printf("%s ", device.mac.c_str()); 
     }
@@ -212,6 +243,8 @@ uint8_t AppDataManager::getUwbAnchorId(int index) {
     return 0;
 }
 
+ 
+
 void AppDataManager::markUwbAnchorDead(uint8_t anchorId) {
     std::lock_guard<std::mutex> lock(dataMutex);
     for (auto& anchor : active_uwb_anchors) {
@@ -237,4 +270,15 @@ void AppDataManager::incrementUwbError(uint8_t anchorId) {
             return;
         }
     }
+}
+
+void AppDataManager::setCalibrationResponse(String res) {
+    std::lock_guard<std::mutex> lock(dataMutex);
+    calibration_response = res;
+}
+String AppDataManager::getCalibrationResponse() {
+    std::lock_guard<std::mutex> lock(dataMutex);
+    String temp = calibration_response;
+    calibration_response = ""; // Czyścimy po przeczytaniu
+    return temp;
 }

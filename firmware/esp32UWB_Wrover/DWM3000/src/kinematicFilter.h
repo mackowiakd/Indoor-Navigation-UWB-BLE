@@ -38,6 +38,7 @@ class SmartUWBFilter {
 
         // 1. Pierwszy pomiar po włączeniu prądu -> akceptujemy w ciemno
         if (last_accepted_dist < 0) {
+            // dodac warunek ze np last_report_time>0 wiec znaczy ze urzadzenie bylo ale juz z jakiegos powocu jest niedostp -> zwracamy -1 i wtedy tag master wywoluje delete na tej kotwicy
             acceptMeasurement(new_dist, current_time);
             return;
         }
