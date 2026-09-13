@@ -103,6 +103,9 @@ void handle_normal_poll(uint8_t sender_id, uint32_t frame_len) {
         
         
     }
+    else {
+        Serial.println("[criticalError]timeout RESP!");
+    }
 }
 
 
@@ -128,6 +131,7 @@ float executeTWR(uint8_t target_anchor) {
     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
     dwt_writetxdata(sizeof(tx_poll_msg), tx_poll_msg, 0);
     dwt_writetxfctrl(sizeof(tx_poll_msg), 0, 1); 
+
 
     // KRYTYCZNA ZMIANA: Zabezpieczenie przed zawieszeniem!
     // Ustawiamy, jak długo Kotwica ma czekać na Ponga (np. 3 milisekundy)
@@ -187,8 +191,7 @@ float executeTWR(uint8_t target_anchor) {
 
                 // >>> now we can print as task for uwb are already launched  <<<
                 Serial.println("[anch_master] Poprawne RESP -> Wysłano FINAL.");
-                Serial.println("[anch_master] Czekam na REPORT od taga...");
-                
+               
                 // 3. CZEKAMY NA PACZKĘ "REPORT" OD KOTWICY!
                 while (!((local_status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
                     
@@ -209,11 +212,22 @@ float executeTWR(uint8_t target_anchor) {
                 } 
                 else {
                     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
+                      Serial.println(" TIMEOUT 2: Kotwica nie przysłała paczki REPORT na czas!");
+             
                 }
             } 
+            else {
+                Serial.println("Za wolny procesor! Nie zdążyłem wysłać FINAL w oknie czasowym.");
+            }
         } 
+        else {
+            
+            Serial.printf("To nie było RESP. Dostałem: %c%c%c ID: %i\n",  rx_buffer[5], rx_buffer[6], rx_buffer[7], rx_buffer[8]);
+        }
     } else {
-        dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);   
+        dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR); 
+          Serial.println(" TIMEOUT 1: Kotwica nie odpowiedziała na pierwszego POLLa!");
+     
     };
 
    // --- SPRZĄTANIE (Niezależnie czy sukces, czy błąd) ---
@@ -293,7 +307,7 @@ void setup() {
     dwt_settxantennadelay(TX_ANT_DLY);
     dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
 
-   
+   Serial.printf("[KOTWICA] UWB DW3000 zainicjalizowany poprawnie! ID: %i\n", ANCHOR_NUM);
 }
 
 
@@ -334,7 +348,7 @@ void loop() {
             // KTOŚ DO NAS KRZYCZY - SPRAWDZAMY CO CHCE:
             if (rx_buffer[CMD_IDX] == 'P' && rx_buffer[CMD_IDX+1] == 'O' && rx_buffer[CMD_IDX+2] == 'L' && rx_buffer[DEST_IDX] == ANCHOR_NUM) {
                 
-                Serial.println("\n[KOTWICA] Odebrano POLL od Taga! Wysyłam RESP...");
+                Serial.println("KOTWICA] Odebrano POLL od Taga! Wysyłam RESP...");
                
                 handle_normal_poll(sender_id, frame_len); 
             
@@ -349,12 +363,10 @@ void loop() {
                 
             } 
             else {
-                Serial.println("[KOTWICA] Nieznana komenda (ani POL, ani CAL).");
+               Serial.printf(" Nieznana komenda: %c%c%c ID: %i\n", rx_buffer[5], rx_buffer[6], rx_buffer[7], rx_buffer[8]);
+              
             }
         } 
-        else {
-            Serial.println("[KOTWICA][SZPIEG] Przyleciała paczka, ale nie do mnie (albo szum).");
-        }
     } 
     else {
         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_ERR);
