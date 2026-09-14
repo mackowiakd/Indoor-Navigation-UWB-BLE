@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
 import com.polsl.bemyeyes.navigation.*
+import com.polsl.bemyeyes.navigation.dataBase.IoTDevice
 import com.polsl.bemyeyes.navigation.dataBase.NavigationTarget
 import com.polsl.bemyeyes.navigation.dataBase.RetrofitClient
 import com.polsl.bemyeyes.ui.theme.BeMyEyesTheme
@@ -60,7 +61,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        bleManager = BleConnectionManager(routingEngine) { nowaWiadomosc ->
+        bleManager = BleConnectionManager(routingEngine, autoCalibrationEngine) { nowaWiadomosc ->
             // Upewniamy się, że modyfikujemy interfejs w głównym wątku
             runOnUiThread {
 
@@ -187,13 +188,10 @@ class MainActivity : ComponentActivity() {
 
                                 val zoneAnchors = topologyDatabase.getDevicesForLocation(locationId)
                                     .filter { it.deviceType == "UWB_ANCHOR" }
-                                val zoneTags = topologyDatabase.getDevicesForLocation(locationId)
-                                    .filter { it.deviceType == "TAG_BLE" }
-
 
                                 if (zoneAnchors.size >= 2) {
                                      // 1. Przekazujemy kotwice do silnika, żeby pamiętał, co kalibrujemy
-                                    autoCalibrationEngine.prepareCalibration(zoneAnchors, zoneTags)
+                                    autoCalibrationEngine.prepareCalibration(zoneAnchors)
 
                                     // 2. Wysyłamy komendę do ESP32 i czekamy na asynchroniczny odzew w callbacku
                                     bleManager.sendFilterToEsp(zoneAnchors, "CALIB")
@@ -209,7 +207,16 @@ class MainActivity : ComponentActivity() {
                                 appToEspLogs.add(0, "❌ Najpierw musisz wejść do jakiejś strefy (Cold Start)!")
                             }
 
+                        },
+                        onCalibrateTagClick = { tag ->
+                            appToEspLogs.add(0, "🛠 Rozpoczęto nasłuch UWB dla taga: $tag.. Trzymaj urządzenie w bezruchu...")
+
+                        val zoneAnchors = topologyDatabase.getDevicesForLocation(
+                            routingEngine.currentLocationId!!)
+                        autoCalibrationEngine.startTagCalibration(tag, zoneAnchors)
+
                         }
+
 
                     )
                 }
@@ -284,8 +291,8 @@ fun NavigationScreen(
     currentTargetName: String,
     currentLocation: Int? = null,
     onClearNavigation: () -> Unit ,
-    onCalibrateZoneClick: (Int?) -> Unit // <--- NOWY PARAMETR (Kalibracja)
-
+    onCalibrateZoneClick: (Int?) -> Unit, // <--- NOWY PARAMETR (Kalibracja)
+    onCalibrateTagClick: (IoTDevice) -> Unit // DODAJEMY NOWY PARAMETR
 
 ) {
 

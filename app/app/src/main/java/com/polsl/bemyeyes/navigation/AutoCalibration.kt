@@ -69,10 +69,11 @@ class AutoCalibrationEngine {
     // Konsumuje surowe dane z BleConnectionManager.
     // Zwraca zaktualizowany obiekt IoTDevice (Tag), gdy zbierze dość danych. W przeciwnym razie zwraca null.
     fun processTagMeasurement(anchorMac: String, distance: Double): IoTDevice? {
-        if (!isCalibratingTag || currentCalibrationTag == null) return null
+        if (!isCalibratingTag || currentCalibrationTag == null)
+            return null
 
         // 1. Dodajemy pomiar do bufora
-        val formattedMac = formatAnchorId(anchorMac)
+        val formattedMac = formatAnchorId(anchorMac) // trzeba spr czy to anchor a nie tag
         distanceBuffer.getOrPut(formattedMac) { mutableListOf() }.add(distance)
 
         // 2. Filtrujemy tylko te kotwice, z których mamy już stabilną próbkę (np. 10 pomiarów)
@@ -84,10 +85,10 @@ class AutoCalibrationEngine {
 
             val points = mutableListOf<RangedPoint>()
 
-            // Mapujemy uśrednione dystanse na fizyczne współrzędne z bazy
+            // Mapujemy uśrednione dystanse na fizyczne współrzędne z bazy - czemu?? przeciez to powinny byc walsnie odleglsoci kotwic wgledem nas an nie ich punkty z kalibracji
             for ((mac, distances) in readyAnchors) {
                 val anchor = currentCalibrationAnchors.find { it.macAddress == mac }
-                if (anchor?.globalX != null && anchor.globalY != null) {
+                if (anchor?.globalX != null && anchor.globalY != null && anchor.deviceType=="UWB_ANCHOR") {
                     points.add(RangedPoint(anchor.globalX, anchor.globalY, distances.average()))
                 }
             }
