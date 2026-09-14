@@ -170,37 +170,30 @@ class BleConnectionManager(
                 }
 
                 if (dist != null) {
-                    // 1. ZIMNY START: Pytamy silnik, czy ten MAC to nowe piętro?
-                    // routingEngine sprawdzi to w bazie i ew. zwróci nam całą listę!
-                    val newDevicesToSend = routingEngine.processScannedDevice(id, dist)
-
-                    // 2. Czy jest coś do wysłania?
-                    if (newDevicesToSend != null) {
-                        sendFilterToEsp(newDevicesToSend) // Wysyłamy!
-                        // Zmuszamy UI do odświeżenia (żeby pojawiły się przyciski mikro)
-                        update_dev_list = !update_dev_list
-                    }
-
-                    // 3. Wywołujemy główny wątek UI, aby wyświetlić pozycję na ekranie
-                        android.os.Handler(android.os.Looper.getMainLooper()).post {
-                            routingEngine.processNewTelemetryData(id, dist)
-
-                    }
                     if (autoCalibrationEngine.isCalibratingTag) {
                         // TRYB KALIBRACJI: Dane lecą do bufora
                         val coordinates = autoCalibrationEngine.processTagMeasurement(id, dist)
-                        if (coordinates != null) {
-                            // Zwracamy wynik wyżej do zapisu (np. przez callback onTagCalibrated)
-                           // onTagCalibrated?.invoke(autoCalibrationEngine.targetTagMac!!, coordinates)
-                        }
+
                     } else {
-                        // TRYB NAWIGACJI: Stary kod, dane lecą do silnika routingu
+                            // TRYB NAWIGACJI: Stary kod, dane lecą do silnika routingu
+                        // 1. ZIMNY START: Pytamy silnik, czy ten MAC to nowe piętro?
+                        // routingEngine sprawdzi to w bazie i ew. zwróci nam całą listę!
                         val newDevicesToSend = routingEngine.processScannedDevice(id, dist)
-                        // ...
-                        android.os.Handler(android.os.Looper.getMainLooper()).post {
-                            routingEngine.processNewTelemetryData(id, dist)
+
+                        // 2. Czy jest coś do wysłania?
+                        if (newDevicesToSend != null) {
+                            sendFilterToEsp(newDevicesToSend) // Wysyłamy!
+                            // Zmuszamy UI do odświeżenia (żeby pojawiły się przyciski mikro)
+                            update_dev_list = !update_dev_list
+                        }
+
+                        // 3. Wywołujemy główny wątek UI, aby wyświetlić pozycję na ekranie
+                            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                routingEngine.processNewTelemetryData(id, dist)
+
                         }
                     }
+
                     //call calculateUserPosition2D
                 }
                 else {

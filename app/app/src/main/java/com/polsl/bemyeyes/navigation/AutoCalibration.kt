@@ -80,8 +80,7 @@ class AutoCalibrationEngine {
         val readyAnchors = distanceBuffer.filter { it.value.size >= 10 }
 
         // 3. Jeśli mamy co najmniej 3 stabilne kotwice -> odpalamy matematykę
-        if (readyAnchors.size >= 3) {
-            isCalibratingTag = false // Zatrzymujemy nasłuch
+        if (readyAnchors.size >= 2) {
 
             val points = mutableListOf<RangedPoint>()
 
@@ -92,16 +91,16 @@ class AutoCalibrationEngine {
                     points.add(RangedPoint(anchor.globalX, anchor.globalY, distances.average()))
                 }
             }
+            if (points.size >= 2) {
+                isCalibratingTag = false // Mamy sukces, wyłączamy nasłuch
+                val position =  TrilaterationStrategy().calculatePosition(points)
 
-            // Odpalamy algorytm trylateracji (Nasza strategia)
-            val strategy = TrilaterationStrategy()
-            val position = strategy.calculatePosition(points)
+                distanceBuffer.clear()
 
-            distanceBuffer.clear()
-
-            // MAGIA KOTLINA: Tworzymy kopię obiektu taga z nowymi, wyliczonymi współrzędnymi!
-            if (position != null) {
-                return currentCalibrationTag!!.copy(globalX = position.first, globalY = position.second)
+                // MAGIA KOTLINA: Tworzymy kopię obiektu taga z nowymi, wyliczonymi współrzędnymi!
+                if (position != null) {
+                    return currentCalibrationTag!!.copy(globalX = position.first, globalY = position.second)
+                }
             }
         }
 
