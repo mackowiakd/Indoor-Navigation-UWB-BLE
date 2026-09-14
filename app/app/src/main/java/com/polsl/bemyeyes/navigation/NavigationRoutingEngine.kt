@@ -43,6 +43,8 @@ class NavigationRoutingEngine(
     // --- ZMIENNE WATCHDOGA ---
     private var watchdogJob: Job? = null
     private var lastTargetSignalTime: Long = 0L
+
+
     // =========================================================================
     // AKCJE UŻYTKOWNIKA (Wywoływane z MainActivity po kliknięciu przycisku)
     // =========================================================================
@@ -163,6 +165,7 @@ class NavigationRoutingEngine(
 
             // Jeśli minęliśmy obiekt (jest w promieniu strefy "Mijasz", np. 1.8 metra)
             if (distanceToPoi <= 1.8) {
+                //dodac warunek czy obiekt po lewej czy po prawej
 
                 // Sprawdzamy czy już o nim nie mówiliśmy przed chwilą
                 if (announcedPoisInStep.contains(target.associatedMac)) continue

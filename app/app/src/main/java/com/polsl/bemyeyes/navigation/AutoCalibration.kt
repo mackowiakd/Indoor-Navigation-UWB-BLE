@@ -1,11 +1,13 @@
 package com.polsl.bemyeyes.navigation
 
 import com.polsl.bemyeyes.navigation.dataBase.IoTDevice
+import com.polsl.bemyeyes.navigation.PositioningStrategy
 
 // 1. Uniwersalny interfejs dla każdego algorytmu (Zmieniono UwbAnchor na IoTDevice)
 interface CalibrationStrategy {
     // Przyjmuje macierz odległości i listę kotwic (jako IoTDevice). Zwraca kotwice z nadpisanymi (X, Y)
     fun calibrate(distanceMatrix: Array<DoubleArray>, anchors: List<IoTDevice>): List<IoTDevice>
+
 }
 
 // 2. Implementacja dla 2 kotwic (Korytarz 1.5D)
@@ -52,43 +54,65 @@ class ThreeAnchorTrigonometryStrategy : CalibrationStrategy {
 class AutoCalibrationEngine {
     // Pamięć podręczna na kotwice, które aktualnie każemy kalibrować ESP32
     private var currentCalibrationAnchors: List<IoTDevice> = emptyList()
-    private var currentCalibrationTags: List<IoTDevice> = emptyList()
-
+    private var currentCalibrationTag: IoTDevice? = null
+    var onTagCalibrated: ((String, Map<String, Double>) -> Unit)? = null // callback??
     var isCalibratingTag = false
-        private set
-    var targetTagMac: String? = null
-        private set
 
     private val distanceBuffer = mutableMapOf<String, MutableList<Double>>()
 
-    fun startTagCalibration(tagMac: String) {
-        targetTagMac = tagMac
+    fun startTagCalibration(tag: IoTDevice, knownAnchors: List<IoTDevice>) {
+        currentCalibrationTag = tag
+        currentCalibrationAnchors = knownAnchors
         distanceBuffer.clear()
         isCalibratingTag = true
     }
+    // Konsumuje surowe dane z BleConnectionManager.
+    // Zwraca zaktualizowany obiekt IoTDevice (Tag), gdy zbierze dość danych. W przeciwnym razie zwraca null.
+    fun processTagMeasurement(anchorMac: String, distance: Double): IoTDevice? {
+        if (!isCalibratingTag || currentCalibrationTag == null) return null
 
-    // Wywoływane dla każdego pomiaru UWB. Zwraca wyniki, gdy zbierze dość danych.
-    fun processTagMeasurement(anchorId: String, distance: Double): Map<String, Double>? {
-        if (!isCalibratingTag) return null
+        // 1. Dodajemy pomiar do bufora
+        val formattedMac = formatAnchorId(anchorMac)
+        distanceBuffer.getOrPut(formattedMac) { mutableListOf() }.add(distance)
 
-        distanceBuffer.getOrPut(anchorId) { mutableListOf() }.add(distance)
+        // 2. Filtrujemy tylko te kotwice, z których mamy już stabilną próbkę (np. 10 pomiarów)
+        val readyAnchors = distanceBuffer.filter { it.value.size >= 10 }
 
-        // Sprawdzamy czy mamy np. po 10 próbek z 3 różnych kotwic
-//        if (hasEnoughSamples(distanceBuffer)) {
-//            isCalibratingTag = false
-//            return calculateTrilateration(distanceBuffer) // Zwraca gotowe Map("global_x" to X, "global_y" to Y)
-//        }
-        return null
+        // 3. Jeśli mamy co najmniej 3 stabilne kotwice -> odpalamy matematykę
+        if (readyAnchors.size >= 3) {
+            isCalibratingTag = false // Zatrzymujemy nasłuch
+
+            val points = mutableListOf<RangedPoint>()
+
+            // Mapujemy uśrednione dystanse na fizyczne współrzędne z bazy
+            for ((mac, distances) in readyAnchors) {
+                val anchor = currentCalibrationAnchors.find { it.macAddress == mac }
+                if (anchor?.globalX != null && anchor.globalY != null) {
+                    points.add(RangedPoint(anchor.globalX, anchor.globalY, distances.average()))
+                }
+            }
+
+            // Odpalamy algorytm trylateracji (Nasza strategia)
+            val strategy = TrilaterationStrategy()
+            val position = strategy.calculatePosition(points)
+
+            distanceBuffer.clear()
+
+            // MAGIA KOTLINA: Tworzymy kopię obiektu taga z nowymi, wyliczonymi współrzędnymi!
+            if (position != null) {
+                return currentCalibrationTag!!.copy(globalX = position.first, globalY = position.second)
+            }
+        }
+
+        return null // Wciąż zbieramy dane...
     }
-    // ... tu funkcje hasEnoughSamples i calculateTrilateration ...
-
     // ANCHORS
-    fun prepareCalibration(anchors: List<IoTDevice>, tags:List<IoTDevice>) {
+    fun prepareCalibration(anchors: List<IoTDevice>) {
         currentCalibrationAnchors = anchors
-        currentCalibrationTags= tags
+
     }
 
-    fun performCalibration(distanceMatrix: Array<DoubleArray>, anchors: List<IoTDevice>): List<IoTDevice> {
+    fun performAnchorCalibration(distanceMatrix: Array<DoubleArray>, anchors: List<IoTDevice>): List<IoTDevice> {
         val anchorCount = anchors.size
 
         // System SAM decyduje, jakiej matematyki użyć
@@ -101,6 +125,7 @@ class AutoCalibrationEngine {
 
         return strategy.calibrate(distanceMatrix, anchors)
     }
+
 
     // Funkcja pomocnicza zamieniająca "1", "0x1" lub "0x0001" na jednolity format "0x0001"
     private fun formatAnchorId(rawId: String): String {
@@ -151,18 +176,9 @@ class AutoCalibrationEngine {
             }
         }
         // Zwracamy wynik natychmiastowego przeliczenia algorytmu
-        return performCalibration(distanceMatrix, currentCalibrationAnchors)
+        return performAnchorCalibration(distanceMatrix, currentCalibrationAnchors)
     }
 
-    fun calibrateTags() {
-        /*Mając 3 uśrednione odległości ($d_1, d_2, d_3$) do 3 kotwic o znanych pozycjach
-        ($(x_1, y_1), (x_2, y_2), (x_3, y_3)$), rozwiązujemy układ równań dla 3 okręgów.
 
-         wywolujemy na tym co zwroci  autoCalibrationEngine.processCalibrationData(rawData) w MainActivity
-        // Zwracamy wynik natychmiastowego przeliczenia algorytmu
-        return performCalibration(distanceMatrix, currentCalibrationAnchors)
-    }
 
-         */
-    }
 }
