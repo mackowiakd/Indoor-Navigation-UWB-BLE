@@ -91,14 +91,22 @@ class AutoCalibrationEngine {
                     points.add(RangedPoint(anchor.globalX, anchor.globalY, distances.average()))
                 }
             }
+
             if (points.size >= 2) {
                 isCalibratingTag = false // Mamy sukces, wyłączamy nasłuch
-                val position =  TrilaterationStrategy().calculatePosition(points)
 
+                // 🔥 DYNAMICZNY WYBÓR ALGORYTMU 🔥
+                val strategy: PositioningStrategy = if (points.size == 2) {
+                    TwoAnchorCorridorPositioningStrategy() // Uruchomi się podczas Twoich testów 1D
+                } else  {
+                    TrilaterationStrategy() // Uruchomi się domyślnie, gdy dokupisz trzecią kotwicę
+                }
+
+                val position = strategy.calculatePosition(points)
                 distanceBuffer.clear()
 
-                // MAGIA KOTLINA: Tworzymy kopię obiektu taga z nowymi, wyliczonymi współrzędnymi!
                 if (position != null) {
+                    // Zwracamy kopię taga z wpisanymi współrzędnymi X i Y
                     return currentCalibrationTag!!.copy(globalX = position.first, globalY = position.second)
                 }
             }

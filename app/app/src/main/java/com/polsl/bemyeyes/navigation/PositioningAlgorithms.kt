@@ -47,6 +47,7 @@ class TwoAnchorCorridorPositioningStrategy : PositioningStrategy {
     override fun calculatePosition(points:  List<RangedPoint>): Pair<Double, Double>? {
         if (points.size < 2) return null
 
+
         val p1 = points[0]
         val p2 = points[1]
 
