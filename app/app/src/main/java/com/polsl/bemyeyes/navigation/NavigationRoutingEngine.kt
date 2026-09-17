@@ -256,10 +256,9 @@ class NavigationRoutingEngine(
             latestAnchorDistances[detectedDevice] = distanceOrRssi
              // Szukamy, ile z naszych "usłyszanych" kotwic ma fizyczne współrzędne w bazie
             val points =  mutableListOf<RangedPoint>()
-            for ((mac, dist) in latestAnchorDistances) {
-                val anchor = buildingTopologyDB.getDeviceByMac(detectedDevice.macAddress)
-                if (anchor?.globalX != null && anchor.globalY != null) {
-                    points.add(RangedPoint(anchor.globalX, anchor.globalY, dist))
+            for ((deviceInMap, dist) in latestAnchorDistances) {
+                if (deviceInMap.globalX != null && deviceInMap.globalY != null) {
+                    points.add(RangedPoint(deviceInMap.globalX, deviceInMap.globalY, dist))
                 }
             }
             // Jeśli widzimy przynajmniej 3 kotwice (albo 2, jeśli użyjesz strategii korytarzowej)
@@ -277,17 +276,8 @@ class NavigationRoutingEngine(
                 }
             }
         }
-        // 3. LOGIKA MIJANIA INNYCH OBIEKTÓW PO DRODZE (Eksploracja tła)
-        if (distanceOrRssi <= PASSING_THRESHOLD_METERS) {
+        // 3. LOGIKA MIJANIA INNYCH OBIEKTÓW (Eksploracja tła) -> wswzytko teraz w evaluatePassingObjects2D
 
-            // Upewniamy się, że nie mówimy "Mijasz biurko", jeśli biurko jest naszym głównym celem
-            val isMyMainTarget = (currentTarget != null && !currentTarget!!.isMacroTarget && macAddress == currentTarget!!.associatedMac)
-
-            if (!isMyMainTarget) {
-                // Wywołujemy Twoją odświeżoną funkcję!
-                evaluatePathAndAnnounce(detectedDevice)
-            }
-        }
     }
 
     // =========================================================================
