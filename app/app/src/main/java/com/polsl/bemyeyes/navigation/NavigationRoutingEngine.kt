@@ -35,6 +35,7 @@ class NavigationRoutingEngine(
 
     //--zmienne stanu (przsylanie listy urzadzen do espa) --
     var currentLocationId: Int? = null // Gdzie aktualnie jestem? (do Cold Startu)
+    var onPositionUpdated: ((Double, Double) -> Unit)? = null
     private var lastTransitionTime: Long = 0  // Kiedy ostatnio zmieniliśmy strefę?
 
     // Ustawienia systemu
@@ -126,11 +127,10 @@ class NavigationRoutingEngine(
 
         for (target in activePOIs) {
 
-            // 🔥 KLUCZOWY KROK: Wyciągamy fizyczne urządzenie z bazy po adresie MAC,
-            // aby dobrać się do jego współrzędnych globalnych X i Y
+
             val device = buildingTopologyDB.getDeviceByMac(target.associatedMac ?: "") ?: continue
 
-            // Teraz bezpiecznie wyciągamy współrzędne 2D z obiektu device!
+            // wyciągamy współrzędne 2D z obiektu device!
             val poiX = device.globalX ?: continue
             val poiY = device.globalY ?: continue
 
@@ -269,10 +269,11 @@ class NavigationRoutingEngine(
                     TrilaterationStrategy() // Uruchomi się domyślnie, gdy dokupisz trzecią kotwicę
                 }
 
-                val myPosition = strategy.calculatePosition(points)
+                val myPosition = strategy.calculatePosition(points) // send to map ploting
                 if (myPosition != null) {
                     // Przekazujemy (X, Y) do logiki wektorowej
                     evaluatePassingObjects2D(myPosition.first, myPosition.second)
+                    onPositionUpdated?.invoke(myPosition.first, myPosition.second)
                 }
             }
         }
