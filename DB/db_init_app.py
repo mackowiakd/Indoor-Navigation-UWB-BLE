@@ -42,7 +42,7 @@ def reset_app_database():
             RESTART IDENTITY CASCADE;
         """)
 
-        print("🏗️ KROK 2: Tworzenie Stref (Topologia)...")
+        print(" KROK 2: Tworzenie Stref (Topologia)...")
         # Używamy RETURNING Location_ID, aby dynamicznie złapać ID, co zabezpiecza nas
         # na wypadek, gdyby auto-inkrementacja bazy z jakiegoś powodu nie zaczęła się od 1
         cur.execute("INSERT INTO Dim_Topology (building, wing, floor, room_name) VALUES ('Dom', 'Przedpokój', 1, 'Strefa Startowa') RETURNING Location_ID;")
@@ -51,17 +51,17 @@ def reset_app_database():
         cur.execute("INSERT INTO Dim_Topology (building, wing, floor, room_name) VALUES ('Dom', 'Pokój', 1, 'Laboratorium UWB') RETURNING Location_ID;")
         loc_2 = cur.fetchone()[0]
 
-        print("📡 KROK 3: Rejestracja Urządzeń (IoT Devices)...")
+        print(" KROK 3: Rejestracja Urządzeń (IoT Devices)...")
         # Wstrzykujemy zmienne MAC adresów oraz ID pokoi za pomocą krotek parametrów (%s)
         cur.execute("""
-            INSERT INTO Dim_IoT_Devices (mac_address, device_type, location_id, semantic_role, tx_power_config, global_x, global_y) 
+            INSERT INTO Dim_IoT_Devices (mac_address, device_type, location_id, semantic_role, tx_power_config, global_x, global_y, global_z) 
             VALUES 
-            (%s, 'BLE_BEACON', %s, 'Drzwi Wejściowe (Od zewnątrz)', -59, 0, 0),
-            (%s, 'UWB_ANCHOR', %s, 'Kotwica UWB - Narożnik Lewy', NULL, 0, 0),
-            (%s, 'UWB_ANCHOR', %s, 'Kotwica UWB - Narożnik Prawy', NULL, 0, 0),
-            (%s, 'BLE_BEACON', %s, 'Okno', -59, 0, 0),
-            (%s, 'BLE_BEACON', %s, 'Ekspres / Kubek', -59, 0, 0),
-            (%s, 'BLE_BEACON', %s, 'Biurko z laptopem', -59, 0, 0);
+            (%s, 'BLE_BEACON', %s, 'Drzwi Wejściowe (Od zewnątrz)', -59, 0, 0, 0),
+            (%s, 'UWB_ANCHOR', %s, 'Kotwica UWB - Narożnik Lewy', NULL, 0, 0, 0),
+            (%s, 'UWB_ANCHOR', %s, 'Kotwica UWB - Narożnik Prawy', NULL, 0, 0, 0),
+            (%s, 'BLE_BEACON', %s, 'Okno', -59, 0, 0, 0),
+            (%s, 'BLE_BEACON', %s, 'Ekspres / Kubek', -59, 0, 0, 0),
+            (%s, 'BLE_BEACON', %s, 'Biurko z laptopem', -59, 0, 0, 0);
         """, (
             MAC_BLE_DOOR, loc_1,
             MAC_UWB_LEFT, loc_2,

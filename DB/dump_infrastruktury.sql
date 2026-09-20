@@ -5,7 +5,7 @@
 -- Dumped from database version 15.17
 -- Dumped by pg_dump version 17.0
 
--- Started on 2026-09-20 09:47:58
+-- Started on 2026-09-20 11:43:08
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -78,7 +78,8 @@ CREATE TABLE public.dim_iot_devices (
     semantic_role character varying(100),
     tx_power_config integer,
     global_x double precision,
-    global_y double precision
+    global_y double precision,
+    global_z double precision
 );
 
 
@@ -189,13 +190,13 @@ ALTER TABLE ONLY public.dim_topology ALTER COLUMN location_id SET DEFAULT nextva
 -- Data for Name: dim_iot_devices; Type: TABLE DATA; Schema: public; Owner: domi
 --
 
-COPY public.dim_iot_devices (mac_address, device_type, location_id, semantic_role, tx_power_config, global_x, global_y) FROM stdin;
-ff:ff:12:b1:64:d1	BLE_BEACON	1	Drzwi Wejściowe (Od zewnątrz)	-59	\N	\N
-a8:03:2a:b8:ee:fa	BLE_BEACON	2	Okno	-59	\N	\N
-ff:ff:12:8d:7c:df	BLE_BEACON	2	Ekspres / Kubek	-59	\N	\N
-0x0002	UWB_ANCHOR	2	Kotwica UWB - Narożnik Prawy	\N	0	0
-0x0001	UWB_ANCHOR	2	Kotwica UWB - Narożnik Lewy	\N	0	3
-ff:ff:12:a2:43:90	BLE_BEACON	2	Biurko z laptopem	-59	2	1.5
+COPY public.dim_iot_devices (mac_address, device_type, location_id, semantic_role, tx_power_config, global_x, global_y, global_z) FROM stdin;
+ff:ff:12:b1:64:d1	BLE_BEACON	1	Drzwi Wejściowe (Od zewnątrz)	-59	\N	\N	\N
+a8:03:2a:b8:ee:fa	BLE_BEACON	2	Okno	-59	\N	\N	\N
+ff:ff:12:8d:7c:df	BLE_BEACON	2	Ekspres / Kubek	-59	\N	\N	\N
+0x0002	UWB_ANCHOR	2	Kotwica UWB - Narożnik Prawy	\N	0	0	\N
+0x0001	UWB_ANCHOR	2	Kotwica UWB - Narożnik Lewy	\N	0	3	\N
+ff:ff:12:a2:43:90	BLE_BEACON	2	Biurko z laptopem	-59	2	1.5	\N
 \.
 
 
@@ -307,7 +308,7 @@ ALTER TABLE ONLY public.dim_navigation_targets
     ADD CONSTRAINT dim_navigation_targets_location_id_fkey FOREIGN KEY (location_id) REFERENCES public.dim_topology(location_id);
 
 
--- Completed on 2026-09-20 09:47:58
+-- Completed on 2026-09-20 11:43:08
 
 --
 -- PostgreSQL database dump complete

@@ -35,7 +35,8 @@ def setup_and_generate_data():
             Semantic_Role VARCHAR(100),
             TX_Power_Config INT,
             Global_X DECIMAL(10,2),
-            Global_Y DECIMAL(10,2)
+            Global_Y DECIMAL(10,2),
+            Global_Z DECIMAL(10,2)
         );
 
         CREATE TABLE IF NOT EXISTS Fact_Telemetry (
@@ -74,11 +75,11 @@ def setup_and_generate_data():
 
             # Dodajemy urządzenia do bazy
             cur.execute("""
-                INSERT INTO Dim_IoT_Devices (MAC_Address, Device_Type, Location_ID, Semantic_Role, TX_Power_Config)
+                INSERT INTO Dim_IoT_Devices (MAC_Address, Device_Type, Location_ID, Semantic_Role, TX_Power_Config, Global_X, Global_Y, Global_Z)
                 VALUES 
-                (%s, 'BLE_BEACON', %s, 'Drzwi Główne', -59, 0, 0),
-                (%s, 'UWB_ANCHOR', %s, 'Narożnik L', NULL, 0, 0),
-                (%s, 'UWB_ANCHOR', %s, 'Narożnik P', NULL, 0, 0);
+                (%s, 'BLE_BEACON', %s, 'Drzwi Główne', -59, 0, 0, 0),
+                (%s, 'UWB_ANCHOR', %s, 'Narożnik L', NULL, 0, 0, 0),
+                (%s, 'UWB_ANCHOR', %s, 'Narożnik P', NULL, 0, 0, 0);
             """, (ble_mac, loc_id, uwb_mac_1, loc_id, uwb_mac_2, loc_id))
 
             # Rejestrujemy Tag BLE do naszej listy, żeby potem zrobić mu historię baterii
@@ -94,7 +95,7 @@ def setup_and_generate_data():
 
     print(f"Wygenerowano infrastrukturę: {len(ble_devices)} tagów BLE gotowych do symulacji.")
 
-    # KROK 4: Generowanie Telemetrii Baterii (Dla skryptu Predictive Maintenance)
+    # KROK 4: Generowanie Telemetrii Baterii (Dla skryptu Predictive Maintenance) - UNUSED FOR NOW 
     print("KROK 4: Wypełnianie tabeli faktów (Symulacja 90 dni ruchu)...")
     start_date = datetime.now() - timedelta(days=90)
     
