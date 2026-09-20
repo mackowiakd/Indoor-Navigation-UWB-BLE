@@ -54,14 +54,14 @@ def reset_app_database():
         print("📡 KROK 3: Rejestracja Urządzeń (IoT Devices)...")
         # Wstrzykujemy zmienne MAC adresów oraz ID pokoi za pomocą krotek parametrów (%s)
         cur.execute("""
-            INSERT INTO Dim_IoT_Devices (mac_address, device_type, location_id, semantic_role, tx_power_config) 
+            INSERT INTO Dim_IoT_Devices (mac_address, device_type, location_id, semantic_role, tx_power_config, global_x, global_y) 
             VALUES 
-            (%s, 'BLE_BEACON', %s, 'Drzwi Wejściowe (Od zewnątrz)', -59),
-            (%s, 'UWB_ANCHOR', %s, 'Kotwica UWB - Narożnik Lewy', NULL),
-            (%s, 'UWB_ANCHOR', %s, 'Kotwica UWB - Narożnik Prawy', NULL),
-            (%s, 'BLE_BEACON', %s, 'Okno', -59),
-            (%s, 'BLE_BEACON', %s, 'Ekspres / Kubek', -59),
-            (%s, 'BLE_BEACON', %s, 'Biurko z laptopem', -59);
+            (%s, 'BLE_BEACON', %s, 'Drzwi Wejściowe (Od zewnątrz)', -59, 0, 0),
+            (%s, 'UWB_ANCHOR', %s, 'Kotwica UWB - Narożnik Lewy', NULL, 0, 0),
+            (%s, 'UWB_ANCHOR', %s, 'Kotwica UWB - Narożnik Prawy', NULL, 0, 0),
+            (%s, 'BLE_BEACON', %s, 'Okno', -59, 0, 0),
+            (%s, 'BLE_BEACON', %s, 'Ekspres / Kubek', -59, 0, 0),
+            (%s, 'BLE_BEACON', %s, 'Biurko z laptopem', -59, 0, 0);
         """, (
             MAC_BLE_DOOR, loc_1,
             MAC_UWB_LEFT, loc_2,

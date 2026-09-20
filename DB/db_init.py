@@ -33,7 +33,9 @@ def setup_and_generate_data():
             Device_Type VARCHAR(20) NOT NULL,
             Location_ID INT REFERENCES Dim_Topology(Location_ID),
             Semantic_Role VARCHAR(100),
-            TX_Power_Config INT
+            TX_Power_Config INT,
+            Global_X DECIMAL(10,2),
+            Global_Y DECIMAL(10,2)
         );
 
         CREATE TABLE IF NOT EXISTS Fact_Telemetry (
@@ -74,9 +76,9 @@ def setup_and_generate_data():
             cur.execute("""
                 INSERT INTO Dim_IoT_Devices (MAC_Address, Device_Type, Location_ID, Semantic_Role, TX_Power_Config)
                 VALUES 
-                (%s, 'BLE_BEACON', %s, 'Drzwi Główne', -59),
-                (%s, 'UWB_ANCHOR', %s, 'Narożnik L', NULL),
-                (%s, 'UWB_ANCHOR', %s, 'Narożnik P', NULL);
+                (%s, 'BLE_BEACON', %s, 'Drzwi Główne', -59, 0, 0),
+                (%s, 'UWB_ANCHOR', %s, 'Narożnik L', NULL, 0, 0),
+                (%s, 'UWB_ANCHOR', %s, 'Narożnik P', NULL, 0, 0);
             """, (ble_mac, loc_id, uwb_mac_1, loc_id, uwb_mac_2, loc_id))
 
             # Rejestrujemy Tag BLE do naszej listy, żeby potem zrobić mu historię baterii
