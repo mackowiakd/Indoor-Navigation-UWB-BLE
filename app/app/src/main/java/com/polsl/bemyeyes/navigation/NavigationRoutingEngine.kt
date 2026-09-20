@@ -20,12 +20,7 @@ class NavigationRoutingEngine(
     private var previousY: Double? = null
     // ID urządzeń, które już minęliśmy w tej sesji (żeby nie powtarzać komunikatu co 3 sekundy)
     private val announcedPoisInStep = mutableSetOf<String>()
-
-    private var currentTarget: NavigationTarget? = null // Dokąd idę?
-
-    private var lastPassAnnouncementTimeMs: Long = 0
-    private val PASSING_THRESHOLD_METERS = 2.0
-    private val ANNOUNCEMENT_COOLDOWN_MS = 8000
+    private var currentTarget: NavigationTarget? = null
     private var lastArrivalAnnouncementTimeMs = 0L   // Kiedy ostatnio powiedziano "Cel osiągnięty / Jesteś przed..."
     private var lastProximityAnnouncementTimeMs = 0L // Kiedy ostatnio powiedziano "Zbliżasz się..."
 
@@ -119,37 +114,35 @@ class NavigationRoutingEngine(
         val moveDx = currentX - previousX!!
         val moveDy = currentY - previousY!!
 
+        val vLength = Math.hypot(moveDx, moveDy)
         // Filtrowanie szumu: jeśli użytkownik stoi w miejscu, nie wyliczamy kierunku
-        if (Math.hypot(moveDx, moveDy) < 0.4) return
+        if (vLength < 0.4) return
 
         // Pobieramy z bazy wszystkie cele mikro (POI) dla obecnej strefy
         val activePOIs = buildingTopologyDB.getMicroTargets(currentLocationId)
 
         for (target in activePOIs) {
 
-
             val device = buildingTopologyDB.getDeviceByMac(target.associatedMac ?: "") ?: continue
 
             // wyciągamy współrzędne 2D z obiektu device!
             val poiX = device.globalX ?: continue
             val poiY = device.globalY ?: continue
+            // Wektor do obiektu
+            val poiDx = poiX - currentX
+            val poiDy = poiY - currentY
+            // 1. ILOCZYN WEKTOROWY (Cross Product)
+            val crossProduct = (moveDx * poiDy) - (moveDy * poiDx)
 
-            // Obliczamy odległość do obiektu
-            val distanceToPoi = Math.hypot(poiX - currentX, poiY - currentY)
+            // 2. ILOCZYN SKALARNY (Dot Product)
+            val dotProduct = (moveDx * poiDx) + (moveDy * poiDy)
 
-            // Jeśli minęliśmy obiekt (jest w promieniu strefy "Mijasz", np. 1.8 metra)
-            if (distanceToPoi <= 1.8) {
-                //dodac warunek czy obiekt po lewej czy po prawej
-
+            // 3. FIZYCZNE ODLEGŁOŚCI WZGLĘDEM KIERUNKU TWOJEGO RUCHU (magia algebry!)
+            val lateralDistance = Math.abs(crossProduct) / vLength // Dystans w bok (lewo/prawo)
+            val forwardDistance = dotProduct/vLength
+            if (lateralDistance <= 4.0 && forwardDistance in -0.5..1.5) {
                 // Sprawdzamy czy już o nim nie mówiliśmy przed chwilą
                 if (announcedPoisInStep.contains(target.associatedMac)) continue
-
-                // Wektor od użytkownika do obiektu (p)
-                val poiDx = poiX - currentX
-                val poiDy = poiY - currentY
-
-                //  ILOCZYN WEKTOROWY 2D (Wyznacznik macierzy)
-                val crossProduct = (moveDx * poiDy) - (moveDy * poiDx)
 
                 // Strefa martwa: jeśli crossProduct jest bliski zero, obiekt leży dokładnie przed/za nami
                 if (Math.abs(crossProduct) < 0.05) continue
@@ -161,7 +154,7 @@ class NavigationRoutingEngine(
             } else {
                 // Gdy użytkownik oddali się od obiektu, usuwamy go z listy ogłoszonych,
                 // żeby system mógł go ogłosić, gdy użytkownik będzie wracał korytarzem
-                if (distanceToPoi > 3.0) {
+                if (forwardDistance < -2.0 || lateralDistance > 5.0) {
                     announcedPoisInStep.remove(target.associatedMac)
                 }
             }
@@ -284,19 +277,6 @@ class NavigationRoutingEngine(
     // =========================================================================
     // FUNKCJE POMOCNICZE AUDIO
     // =========================================================================
-
-    private fun evaluatePathAndAnnounce(detectedDevice: IoTDevice) {
-        val currentTime = System.currentTimeMillis()
-
-        // Sprawdzamy Cooldown (żeby nie spamować użytkownika)
-        if (currentTime - lastPassAnnouncementTimeMs > ANNOUNCEMENT_COOLDOWN_MS) {
-            lastPassAnnouncementTimeMs = currentTime
-
-            // String Interpolation: wrzucamy zmienną prosto do cudzysłowu!
-            // Używamy semanticRole, bo to tam w bazie trzymamy opis np. "Ekspres do kawy"
-            speechService.announceBackground("Mijasz: ${detectedDevice.semanticRole}")
-        }
-    }
     private fun announceDistanceProgress(device: IoTDevice,distance: Double) {
         val distanceInt = distance.roundToInt()
         val dest = currentTarget ?: return // Używamy nowej zmiennej currentTarget!
