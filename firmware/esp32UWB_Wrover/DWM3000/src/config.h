@@ -82,7 +82,7 @@ static uint8_t frame_seq_nb = 0;
 
 //PARAMETRY CZASOWE do comm z KOTWICA -> tag init
 #define POLL_TX_TO_RESP_RX_DLY_UUS 150   // Zmienione z 0 na 150: Dajmy chipowi ułamek mikrosekundy na przejście w nasłuch
-#define RESP_RX_TIMEOUT_UUS 3000         // Timeout 3ms zostaje (zabezpieczenie)
+#define RESP_RX_TIMEOUT_UUS 10000       // Timeout 3ms zostaje (zabezpieczenie)
 #define RESP_RX_TO_FINAL_TX_DLY_UUS 4000 // dajmy Kotwicy BARDZO DUŻO czasu na matematykę przed FINALem
 #define RESP_delay 8000 //czekamy na resp od kotwicy do 8ms
 
@@ -90,10 +90,10 @@ extern dwt_txconfig_t txconfig_options;
 
 // ANCHOR CONFIG
 
-#define ANCHOR_NUM 2   // ID tej konkretnej kotwicy - DO ZMIANY JESLI WGRYWAMY NA WIECEJ NIZ JEDNA
+#define ANCHOR_NUM 1  // ID tej konkretnej kotwicy - DO ZMIANY JESLI WGRYWAMY NA WIECEJ NIZ JEDNA
 
 #define RX_BUF_LEN 24
-#define POLL_RX_TO_RESP_TX_DLY_UUS 2500
+#define POLL_RX_TO_RESP_TX_DLY_UUS 8000
 #define RESP_TX_TO_FINAL_RX_DLY_UUS 150// no blind window after sending resp
 #define FINAL_RX_TIMEOUT_UUS 8000 // dajmy Kotwicy BARDZO DUŻO czasu na matematykę przed FINALem
 #define PRE_TIMEOUT 0 // usefull??

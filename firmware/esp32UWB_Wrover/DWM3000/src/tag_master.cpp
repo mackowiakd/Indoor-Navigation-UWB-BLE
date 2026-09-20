@@ -10,12 +10,6 @@
 #define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 #define FILTER_CHARACTERISTIC_UUID "c0de0001-feed-4688-b7f5-ea07361b26a8"
 
-const std::string MOCK_TAG_1_MAC = "ff:ff:12:b1:64:d1"; // desk black tag 1 (trigger)
-const std::string MOCK_TAG_2_MAC = "a8:03:2a:b8:ee:fa"; // coffe 
-const std::string MOCK_TAG_3_MAC = "ff:ff:12:8d:7c:df"; // blue tag 
-const std::string MOCK_TAG_4_MAC = "ff:ff:12:a2:43:90"; // black tag 2
-
-
 
 NimBLEServer* pServer = NULL;
 NimBLECharacteristic* pCharacteristic = NULL;
@@ -33,7 +27,6 @@ TaskHandle_t TaskUwbHandle = NULL;
 
 // Tworzymy filtr: Max prędkość obiektu 3.0 m/s, odchudzamy strumień danych do aktualizacji co 300 ms (ok. 3Hz)
 std::vector<SmartUWBFilter> filters(8, SmartUWBFilter(3.0, 300)); // Jeden filtr na każdego aktywnego tag BLE
-
 
 // =========================================================================
 // NOWE: MASZYNA STANÓW (State Machine)
@@ -352,7 +345,7 @@ float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
         bool crs_cmd=true;
         // 1. BEZPIECZNIK PROGRAMOWY (Chroni przed ciągłym resetowaniem nasłuchu przez śmieci)
         if (millis() - software_timeout_start > timeout) {
-            Serial.println("[TAG-CALIB] Błąd: Software TIMEOUT - Eter zagłuszony śmieciami!");
+            Serial.println("[TAG-CALIB] Błąd: Software TIMEOUT");
             break; 
         }
          local_status_reg = dwt_read32bitreg(SYS_STATUS_ID);
