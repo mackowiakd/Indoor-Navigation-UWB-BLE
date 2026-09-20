@@ -9,6 +9,7 @@ data class IoTDevice(
     @SerializedName("semantic_role") val semanticRole: String,
     @SerializedName("tx_power_config") val txPowerConfig: Int?,
     @SerializedName("global_x") val globalX: Double?,
-    @SerializedName("global_y") val globalY: Double?
+    @SerializedName("global_y") val globalY: Double?,
+    @SerializedName("global_y") val globalZ: Double? // pietro, np 1.0 to pierwsze a 1.5 to schody na pietro drugie
 
 )
