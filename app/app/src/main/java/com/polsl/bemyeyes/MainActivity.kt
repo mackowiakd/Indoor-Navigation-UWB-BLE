@@ -27,11 +27,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
 import com.polsl.bemyeyes.navigation.*
+import com.polsl.bemyeyes.navigation.dataBase.BuildingTopologyDatabase
 import com.polsl.bemyeyes.navigation.dataBase.IoTDevice
 import com.polsl.bemyeyes.navigation.dataBase.NavigationTarget
 import com.polsl.bemyeyes.navigation.dataBase.RetrofitClient
 import com.polsl.bemyeyes.ui.theme.BeMyEyesTheme
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 
