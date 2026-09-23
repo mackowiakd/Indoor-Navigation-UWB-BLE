@@ -1,13 +1,12 @@
 package com.polsl.bemyeyes.navigation.dataBase
 
+import com.polsl.bemyeyes.BuildConfig
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import okhttp3.OkHttpClient
-
 object RetrofitClient {
 
-    private const val BASE_URL = "https://yhtllubktutvmjngxmzj.supabase.co/rest/v1/" //supabase url
-
+    private const val BASE_URL = BuildConfig.SUPABASE_ANON_KEY
     // KLUCZ ANON -token JWT
     private const val SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlodGxsdWJrdHV0dm1qbmd4bXpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxMDU3NzEsImV4cCI6MjEwNTY4MTc3MX0.THw6bdT2GslmYr_kHmKj7AnD3bWZqqtgVkDEqOxgXdU"
 
