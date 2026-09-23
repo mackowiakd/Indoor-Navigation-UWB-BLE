@@ -6,10 +6,9 @@ import retrofit2.converter.gson.GsonConverterFactory
 import okhttp3.OkHttpClient
 object RetrofitClient {
 
-    private const val BASE_URL = BuildConfig.SUPABASE_ANON_KEY
+    private const val BASE_URL ="https://yhtllubktutvmjngxmzj.supabase.co/rest/v1/"
     // KLUCZ ANON -token JWT
-    private const val SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlodGxsdWJrdHV0dm1qbmd4bXpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxMDU3NzEsImV4cCI6MjEwNTY4MTc3MX0.THw6bdT2GslmYr_kHmKj7AnD3bWZqqtgVkDEqOxgXdU"
-
+    private const val SUPABASE_ANON_KEY = BuildConfig.SUPABASE_ANON_KEY
     // Konfiguracja klienta HTTP, który automatycznie "dokleja" klucz do każdego zapytania
     private val okHttpClient = OkHttpClient.Builder()
         .addInterceptor { chain ->
