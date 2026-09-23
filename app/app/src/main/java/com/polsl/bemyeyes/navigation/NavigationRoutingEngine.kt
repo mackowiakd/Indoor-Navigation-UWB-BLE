@@ -1,5 +1,6 @@
 package com.polsl.bemyeyes.navigation
 
+import com.polsl.bemyeyes.navigation.dataBase.BuildingTopologyDatabase
 import com.polsl.bemyeyes.navigation.dataBase.IoTDevice
 import com.polsl.bemyeyes.navigation.dataBase.NavigationTarget
 import kotlin.math.roundToInt
@@ -99,9 +100,9 @@ class NavigationRoutingEngine(
     }
 
 
-    /**
-     * Analiza iloczynu wektorowego pod kątem lewej/prawej strony
-     */
+    // =============================================================
+    // Analiza iloczynu wektorowego pod kątem lewej/prawej strony
+    //==========================================================
     private fun evaluatePassingObjects2D(currentX: Double, currentY: Double) {
         // Jeśli nie ma historii, zapisujemy obecny punkt i czekamy na kolejną paczkę danych
         if (previousX == null || previousY == null) {
@@ -118,7 +119,7 @@ class NavigationRoutingEngine(
         // Filtrowanie szumu: jeśli użytkownik stoi w miejscu, nie wyliczamy kierunku
         if (vLength < 0.4) return
 
-        // Pobieramy z bazy wszystkie cele mikro (POI) dla obecnej strefy
+        // Pobieramy z bazy wszystkie cele mikro (POI) dla obecnej strefy -> opcja rozszerzenia na Macro anchros
         val activePOIs = buildingTopologyDB.getMicroTargets(currentLocationId)
 
         for (target in activePOIs) {
@@ -154,7 +155,7 @@ class NavigationRoutingEngine(
             } else {
                 // Gdy użytkownik oddali się od obiektu, usuwamy go z listy ogłoszonych,
                 // żeby system mógł go ogłosić, gdy użytkownik będzie wracał korytarzem
-                if (forwardDistance < -2.0 || lateralDistance > 5.0) {
+                if (forwardDistance < -1.0 || lateralDistance > 5.0) {
                     announcedPoisInStep.remove(target.associatedMac)
                 }
             }
@@ -216,8 +217,6 @@ class NavigationRoutingEngine(
 
     // =========================================================================
     // AKCJE Z BLUETOOTHA (Logika mijania i dotarcia)
-
-    //- obsluga ID z kotwicy (rzutowanie na opwiedni format z DB?)
     // =========================================================================
     fun processNewTelemetryData(macAddress : String,distanceOrRssi: Double) {
 
@@ -229,9 +228,7 @@ class NavigationRoutingEngine(
 
             if (currentTarget!!.isMacroTarget) {
                 announceDistanceProgress(detectedDevice,distanceOrRssi)
-                // TRYB MAKRO: Osiągamy cel, jeśli zlapaliśmy sygnał z JAKIEGOKOLWIEK
-                // urządzenia, które leży w docelowym Location_ID
-
+                // TRYB MAKRO: Osiągamy cel, jeśli zlapaliśmy sygnał z JAKIEGOKOLWIEK urządzenia, które leży w docelowym Location_ID
                 speechService.announceImportant("Jesteś w strefie: ${currentTarget!!.name}. Wybierz teraz dokładny cel z listy.")
                 currentTarget = null
 
@@ -265,7 +262,7 @@ class NavigationRoutingEngine(
                 val myPosition = strategy.calculatePosition(points) // send to map ploting
                 if (myPosition != null) {
                     // Przekazujemy (X, Y) do logiki wektorowej
-                    evaluatePassingObjects2D(myPosition.first, myPosition.second)
+                    evaluatePassingObjects2D(myPosition.first, myPosition.second) //jako arg przesylac liste urzadzen -> micro/macro/micro&macro/
                     onPositionUpdated?.invoke(myPosition.first, myPosition.second)
                 }
             }
@@ -284,10 +281,11 @@ class NavigationRoutingEngine(
 
         lastTargetSignalTime = currentTime // tzn ze dostalismy syganl z targetu
 
+        //todo implem 2D vector logic to determine direction (as in evaluatePassingObjects2D) both should used one file - VectorMath.kt
+
         if (device.deviceType == "UWB_ANCHOR") {
             // =======================================================
-            // ŚCIEŻKA UWB: Dokładne odliczanie ("Autostrada")
-            // Scenariusz: Finisz (1.5m) -> Tutaj kończymy podróż!
+            // ŚCIEŻKA UWB: Dokładne odliczanie metrow
             if (distance <= 1.5) {
                 if (currentTime - lastArrivalAnnouncementTimeMs > TARGET_ZONE_COOLDOWN_MS) {
                     lastArrivalAnnouncementTimeMs = currentTime
@@ -334,12 +332,10 @@ class NavigationRoutingEngine(
                 }
             }
         }
-        else if (device.deviceType == "BLE_BEACON") {
+        else if (device.deviceType == "BLE_BEACON") { //dodac logie z passing2D (orientacja przestrzenna)
             // =======================================================
             // ŚCIEŻKA BLE: Logika rozmyta (Brak odliczania metrów!)
             // =======================================================
-            // Zamiast czytać przeskakujące metry, odpalamy komunikaty
-            // tylko po przekroczeniu "magicznych barier" bliskości.
 
             // Bariera 1: Cel osiągnięty (Bardzo mocny sygnał BLE)
             if (distance <= 1.5 ) {
