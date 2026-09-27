@@ -14,6 +14,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"${project.properties["SUPABASE_ANON_KEY"]}\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -36,7 +37,9 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
+
 }
 
 dependencies {
@@ -66,4 +69,4 @@ dependencies {
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     // Gson do zamiany JSON-a na obiekty Kotlina
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
-}
+    }

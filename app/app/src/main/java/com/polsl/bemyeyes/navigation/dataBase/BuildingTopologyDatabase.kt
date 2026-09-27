@@ -1,7 +1,4 @@
-package com.polsl.bemyeyes.navigation
-
-import com.polsl.bemyeyes.navigation.dataBase.IoTDevice
-import com.polsl.bemyeyes.navigation.dataBase.NavigationTarget
+package com.polsl.bemyeyes.navigation.dataBase
 
 // 1. Enumy w Kotlinie
 enum class WingIdentifier {

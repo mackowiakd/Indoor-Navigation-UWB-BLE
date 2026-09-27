@@ -1,11 +1,9 @@
 
 /*
+Format odbioru listy urzadzen z apki
+U:00
 Zaproponujmy taki format ładunku (Payload):
 U_1=4.20;U_2=1.85;B_ff:ff:12:b1:64:d1=3.10,B_a8:03:2a:b8:ee:fa=5.60;
-
-Znak : -> "Aha, nadchodzi lista, rozcinam po przecinkach".
-
-Znak = -> "Aha, to jest pomiar, wrzucam do bazy danych".
 */
 #include "app_data.h"
 
@@ -36,7 +34,7 @@ bool AppDataManager::parseBlePayload(String payload) {
     }
 
     // ==========================================================
-    // DODANY KOD: OBSŁUGA KOMENDY KALIBRACJI (np. CALIB:0x0001,0x0002)
+    // OBSŁUGA KOMENDY KALIBRACJI (np. CALIB:0x0001,0x0002)
     // ==========================================================
     if (payload.startsWith("CALIB:")) {
         String calibStr = payload.substring(6); // Wycinamy "CALIB:"
@@ -65,15 +63,18 @@ bool AppDataManager::parseBlePayload(String payload) {
         isCalibrationCommand = true; // Zmieniamy stan globalny dla Core 1 (TaskUWB)
         return true; // Kończymy! Nie ruszamy standardowych wektorów nawigacji!
     }
+    // ==========================================================
+    // standard command: device list, format U:0x0001,0x0002,B:ff:ff:12:a2:43:90;
+    // ==========================================================
 
     int uwbIndex = payload.indexOf("U:");
     int bleIndex = payload.indexOf(";B:");
 
-    if (uwbIndex == -1 || bleIndex == -1) {
+    if (uwbIndex == -1 && bleIndex == -1) //no data at all
+    {
          Serial.println("[AppData][ERR] Zły format! Oczekiwano np. U_1=4.20;B_ff:ff:12:b1:64:d1=3.10");
         return false;
     }
-
     // --- 1. PARSOWANIE KOTWIC UWB (Z przecinkami!) ---
     String uwbStr = payload.substring(uwbIndex + 2, bleIndex);
     std:: lock_guard<std::mutex> lock(dataMutex); // shared varaible -> locking whole function scope
@@ -136,7 +137,7 @@ void AppDataManager::updateBleDistance(const std::string& mac, float newDist, fl
     std::lock_guard<std::mutex> lock(dataMutex);
     for (auto& device : target_ble_devices) {
         if (device.mac == mac) {
-            device.last_seen_ms = millis();
+            device.last_seen_ms = millis(); // ok ale my chyba nigdy nie sprawdzamy ile faktycznie czasu minelo (is alive?)
             if (device.distance < 0) {
                 device.distance = newDist; // Pierwszy strzał pomiaru
             } else {
@@ -168,8 +169,8 @@ String AppDataManager::getAggregatedData() {
 
     // 1. Sklejamy odległości Kotwic UWB (np. U_0x001=2.45;U_0x002=5.10;)
     for (const auto& anchor : active_uwb_anchors) {
-        if (anchor.distance > 0)  //&& (current_time - anchor.last_seen_ms > TIMEOUT_MS))
-        {
+       
+        if (anchor.distance > 0 && (current_time - anchor.last_seen_ms <= TIMEOUT_MS )) {
             char hexBuf[10];
             // snprintf JEST BEZPIECZNE - sizeof(hexBuf) fizycznie blokuje wyciek pamięci!
             snprintf(hexBuf, sizeof(hexBuf), "0x%04X", anchor.id);
@@ -180,18 +181,17 @@ String AppDataManager::getAggregatedData() {
         }
     }
     
-    for (const auto& device : target_ble_devices) {
-        if (device.distance > 0) //&& (current_time - device.last_seen_ms > TIMEOUT_MS))
-        {
-            // Wysyłamy PEŁNY MAC. Używamy znaku '=' żeby oddzielić MAC od dystansu!
+    for (auto& device : target_ble_devices) {
+        if((device.distance > 0) && (current_time - device.last_seen_ms > TIMEOUT_MS)) {
+            device.distance = -1.0f;
+        }
+        if (device.distance > 0) {
             // Format docelowy: ;BLE_ff:ff:12:b1:64:d1=1.50
             payload += "B_" + String(device.mac.c_str()) + "=" + String(device.distance, 2)+ ";";
             Serial.printf("%s ", device.mac.c_str()); 
+        }
     }
-    Serial.println("\n");
        
-     
-    }
     return payload;
 }
 
@@ -244,34 +244,6 @@ uint8_t AppDataManager::getUwbAnchorId(int index) {
 }
 
  
-
-void AppDataManager::markUwbAnchorDead(uint8_t anchorId) {
-    std::lock_guard<std::mutex> lock(dataMutex);
-    for (auto& anchor : active_uwb_anchors) {
-        if (anchor.id == anchorId && anchor.distance > 0) {
-            anchor.distance = -1.0f; // Zabij ducha!
-            Serial.printf("[AppData] 👻 KOTWICA 0x%04X UZNANA ZA MARTWĄ!\n", anchor.id);
-            return;
-        }
-    }
-}
-
-// Oraz dodaj zwiększanie licznika błędów:
-void AppDataManager::incrementUwbError(uint8_t anchorId) {
-    std::lock_guard<std::mutex> lock(dataMutex);
-    for (auto& anchor : active_uwb_anchors) {
-        if (anchor.id == anchorId) {
-            anchor.failed_attempts++;
-            // Jeśli zawiodła np. 15 razy (co trwa ułamek sekundy w pętli), zabij ją
-            if (anchor.failed_attempts > 15 && anchor.distance > 0) {
-                anchor.distance = -1.0f;
-                Serial.printf("[AppData] 👻 KOTWICA 0x%04X UMARŁA (TIMEOUTY)!\n", anchor.id);
-            }
-            return;
-        }
-    }
-}
-
 void AppDataManager::setCalibrationResponse(String res) {
     std::lock_guard<std::mutex> lock(dataMutex);
     calibration_response = res;

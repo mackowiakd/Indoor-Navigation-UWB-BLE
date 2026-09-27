@@ -32,7 +32,7 @@ build/
 *.obj
 # Ignoruj specyficzne pliki konfiguracyjne, które mogą zawierać np. Twoje hasło do WiFi
 secrets.h
-config.h
+
 
 # ==========================================
 # 4. ANDROID STUDIO / KOTLIN (Dla aplikacji mobilnej)
