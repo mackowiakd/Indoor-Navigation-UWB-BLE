@@ -10,6 +10,7 @@ kotlin = "2.0.21"
 composeBom = "2024.11.00"
 pahoMqtt = "1.2.5"
 pahoService = "1.1.1"
+foundation = "1.7.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -28,6 +29,7 @@ androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-te
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 paho-mqtt = { group = "org.eclipse.paho", name = "org.eclipse.paho.client.mqttv3", version.ref = "pahoMqtt" }
 paho-android = { group = "org.eclipse.paho", name = "org.eclipse.paho.android.service", version.ref = "pahoService" }
+androidx-compose-foundation = { group = "androidx.compose.foundation", name = "foundation", version.ref = "foundation" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

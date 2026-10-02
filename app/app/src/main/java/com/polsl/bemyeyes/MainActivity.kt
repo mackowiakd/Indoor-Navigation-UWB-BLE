@@ -8,6 +8,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,16 +20,18 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
 import com.polsl.bemyeyes.navigation.*
+import com.polsl.bemyeyes.navigation.dataBase.BuildingTopologyDatabase
+import com.polsl.bemyeyes.navigation.dataBase.IoTDevice
 import com.polsl.bemyeyes.navigation.dataBase.NavigationTarget
 import com.polsl.bemyeyes.navigation.dataBase.RetrofitClient
 import com.polsl.bemyeyes.ui.theme.BeMyEyesTheme
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 
@@ -42,6 +45,7 @@ class MainActivity : ComponentActivity() {
 
     protected val debugLogs = mutableStateListOf<String>()  // Stan trzymający logi, obserwowany przez UI (Jetpack Compose)
     private val currentLocationIdState = mutableStateOf<Int?>(null)  // Stan Compose, który pamięta gdzie jesteśmy (np. Location_ID = 2)
+    private val userPositionState = mutableStateOf<Pair<Double, Double>?>(null)
     private val appToEspLogs = mutableStateListOf<String>() // --- KONSOLA 2: Wysyłka z Apki (APP -> ESP) ---
     private val currentTargetNameState = mutableStateOf("Brak celu (Wybierz coś z listy)")
     private val dbSyncVersion = mutableStateOf(0) //oberwowany przez Compose - informuje o zmiane w DB
@@ -59,8 +63,13 @@ class MainActivity : ComponentActivity() {
                 currentLocationIdState.value = locationId
             }
         }
+        routingEngine.onPositionUpdated = { x, y ->
+            runOnUiThread {
+                userPositionState.value = Pair(x, y)
+            }
+        }
 
-        bleManager = BleConnectionManager(routingEngine) { nowaWiadomosc ->
+        bleManager = BleConnectionManager(routingEngine, autoCalibrationEngine) { nowaWiadomosc ->
             // Upewniamy się, że modyfikujemy interfejs w głównym wątku
             runOnUiThread {
 
@@ -75,9 +84,45 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+
         // W MainActivity.kt
         lifecycleScope.launch {
             fetchDatabase()
+        }
+        // Wewnątrz onCreate():
+        bleManager.onCalibrationResultReceived = { rawData ->
+            runOnUiThread {
+                appToEspLogs.add(0, "🛠 Otrzymano pomiary. Przeliczam kalibrację...")
+
+                lifecycleScope.launch {
+                    try {
+                        // Silnik przetwarza surowy tekst i zwraca przeliczone kotwice na bazie zapamiętanych wcześniej kotwic
+                        val calibratedAnchors = autoCalibrationEngine.processCalibrationData(rawData)
+
+                        appToEspLogs.add(0, "✅ Kalibracja Zakończona! Wysyłam do bazy...")
+
+                        calibratedAnchors.forEach { anchor ->
+                            val updatePayload = mapOf(
+                                "global_x" to (anchor.globalX ?: 0.0),
+                                "global_y" to (anchor.globalY ?: 0.0)
+                            )
+
+                            val response = RetrofitClient.apiService.updateDeviceCoordinates(
+                                "eq.${anchor.macAddress}",
+                                updatePayload
+                            )
+
+                            if (response.isSuccessful) {
+                                appToEspLogs.add(0, "☁️ Zaktualizowano DB dla: ${anchor.macAddress} (X=${anchor.globalX}, Y=${anchor.globalY})")
+                            } else {
+                                appToEspLogs.add(0, "❌ Odrzucono zapis dla ${anchor.macAddress}. Kod: ${response.code()}")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        appToEspLogs.add(0, "❌ Błąd kalibracji / zapisu DB: ${e.message}")
+                    }
+                }
+            }
         }
 
         setContent {
@@ -89,6 +134,12 @@ class MainActivity : ComponentActivity() {
                 val dbVer = dbSyncVersion.value // <--- obserwujemy wersje bazy
                 val macroList = remember(dbVer) { topologyDatabase.getMacroTargets() }
                 val microList = remember(currentLocation, dbVer) { topologyDatabase.getMicroTargets(currentLocation) }
+                // Pobieramy WSZYSTKIE urządzenia z obecnego pokoju na potrzeby mapy
+
+                val userPos = userPositionState.value
+                val zoneDevicesList = remember(currentLocation, dbVer) {
+                    currentLocation?.let { topologyDatabase.getDevicesForLocation(it) } ?: emptyList()
+                }
 
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     NavigationScreen(
@@ -101,6 +152,8 @@ class MainActivity : ComponentActivity() {
                         macroTargets = macroList,
                         microTargets = microList,
                         currentLocation = currentLocation,
+                        zoneDevices = zoneDevicesList,
+                        userPosition = userPos,
 
                         // ✅ IMPLEMENTACJA REAKCJI NA RESET:
                         onClearNavigation = {
@@ -140,43 +193,45 @@ class MainActivity : ComponentActivity() {
                         onTestApiClick = {
                             scope.launch { fetchDatabase() }
                         },
+
                         // --- NOWE: Wpinamy logikę wywołania kalibracji ---
                         onCalibrateZoneClick = { locationId ->
                             if (locationId != null) {
-                                debugLogs.add(0, "🛠 [ADMIN] Uruchamiam Auto-Kalibrację dla strefy $locationId")
+                                appToEspLogs.add(
+                                    0,
+                                    "🛠 [ADMIN] Uruchamiam Auto-Kalibrację dla strefy $locationId"
+                                )
 
-                                // 1. Wyciągamy z bazy tylko UWB Anchory dla tej strefy
                                 val zoneAnchors = topologyDatabase.getDevicesForLocation(locationId)
                                     .filter { it.deviceType == "UWB_ANCHOR" }
 
                                 if (zoneAnchors.size >= 2) {
-                                    // 2. TODO: Tutaj ESP32 powinno zrobić ping-pong między kotwicami.
-                                    // Na ten moment MOKUJEMY wynik, żeby zobaczyć, czy działa
-                                    val mockDistanceMatrix = arrayOf(
-                                        doubleArrayOf(0.0, 8.45), // Odległość Kotwica 1 -> Kotwica 2 (8.45m)
-                                        doubleArrayOf(8.45, 0.0)
-                                    )
+                                     // 1. Przekazujemy kotwice do silnika, żeby pamiętał, co kalibrujemy
+                                    autoCalibrationEngine.prepareCalibration(zoneAnchors)
 
-                                    try {
-                                        val calibratedAnchors = autoCalibrationEngine.performCalibration(mockDistanceMatrix, zoneAnchors)
+                                    // 2. Wysyłamy komendę do ESP32 i czekamy na asynchroniczny odzew w callbacku
+                                    bleManager.sendFilterToEsp(zoneAnchors, "CALIB")
+                                    appToEspLogs.add(0, "⏳ Wysłano żądanie do ESP32. Oczekiwanie na pomiary UWB...")
+                                    //i tu robimy drugie zadanie pomiaru (dla 3 > kotwic w naszej lokalizacji => sprawdzamuy czy jest tyle dostepnych
+                                    //jesi nie to zwracamy -1 jako not possible,
+                                    //w sliniku AuCalib dodajemy funkcje ktora z przetwrza te 3 pomiary z kotwicy i nadaje tagowi
 
-                                        debugLogs.add(0, "✅ Kalibracja Zakończona!")
-                                        calibratedAnchors.forEach {
-                                            debugLogs.add(0, "📍 Kotwica ${it.macAddress} otrzymała kordynaty: X=${it.globalX}, Y=${it.globalY}")
-                                            // TODO: W przyszłości zrobimy tu zapytanie do bazy (Retrofit PATCH),
-                                            // żeby wysłać nowe koordynaty z powrotem na serwer.
-                                        }
-                                    } catch (e: Exception) {
-                                        debugLogs.add(0, "❌ Błąd kalibracji: ${e.message}")
-                                    }
                                 } else {
-                                    debugLogs.add(0, "❌ Za mało kotwic w strefie do kalibracji (wymagane min. 2)")
+                                    appToEspLogs.add(0, "❌ Za mało kotwic w strefie do kalibracji (wymagane min. 2)")
                                 }
                             } else {
-                                debugLogs.add(0, "❌ Najpierw musisz wejść do jakiejś strefy (Cold Start)!")
+                                appToEspLogs.add(0, "❌ Najpierw musisz wejść do jakiejś strefy (Cold Start)!")
                             }
-                        }
 
+                        },
+                        onCalibrateTagClick = { tag ->
+                            appToEspLogs.add(0, "🛠 Rozpoczęto nasłuch UWB dla taga: $tag.. Trzymaj urządzenie w bezruchu...")
+
+                        val zoneAnchors = topologyDatabase.getDevicesForLocation(
+                            routingEngine.currentLocationId!!)
+                        autoCalibrationEngine.startTagCalibration(tag, zoneAnchors)
+
+                        }
 
 
                     )
@@ -252,9 +307,10 @@ fun NavigationScreen(
     currentTargetName: String,
     currentLocation: Int? = null,
     onClearNavigation: () -> Unit ,
-    onCalibrateZoneClick: (Int?) -> Unit // <--- NOWY PARAMETR (Kalibracja)
-
-
+    onCalibrateZoneClick: (Int?) -> Unit,
+    onCalibrateTagClick: (IoTDevice) -> Unit, // brak UI dla wyboru taga do kalib (dla  konkretnego locationID)
+    zoneDevices: List<IoTDevice>,
+    userPosition: Pair<Double, Double>?
 ) {
 
     val scrollState = rememberScrollState()
@@ -355,12 +411,23 @@ fun NavigationScreen(
         Button(
             onClick = { onCalibrateZoneClick(currentLocation) },
             modifier = Modifier.fillMaxWidth().height(40.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE65100)) // Ciemnopomarańczowy
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
         ) {
             Text("🔧 ADMIN: Autokalibruj obecną strefę")
         }
+        Spacer(modifier = Modifier.height(4.dp))
 
-        Spacer(modifier = Modifier.height(8.dp))
+        // ==========================================================
+        // NOWY PANEL: MAPA 2D
+        // ==========================================================
+        Text("📍 Podgląd Przestrzenny (Live)", style = MaterialTheme.typography.titleMedium)
+        RoomMapCanvas(
+            devices = zoneDevices,
+            userPosition = userPosition,
+            modifier = Modifier.padding(vertical = 4.dp)
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
         // ==========================================================
         // 5. LISTA MAKRO (Przekazanie zmiennej 'macroTargets' do UI)
         Text("📍 MAKRONAWIGACJA (Stałe)", style = MaterialTheme.typography.titleMedium)
@@ -400,8 +467,8 @@ fun NavigationScreen(
                 }
             }
         }
-        Spacer(modifier = Modifier.height(16.dp))
 
+        Spacer(modifier = Modifier.height(8.dp))
 
         //  KONSOLA: APP -> ESP / DATABASE 🔥
         Card(
@@ -439,6 +506,109 @@ fun NavigationScreen(
                         fontSize = 12.sp
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun RoomMapCanvas(
+    devices: List<IoTDevice>,
+    userPosition: Pair<Double, Double>?,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(300.dp)
+            .background(Color(0xFF222222)) // Ciemne tło wykresu
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+            // 1. Zbieramy wszystkie współrzędne (urządzenia + użytkownik)
+            val allXs = devices.mapNotNull { it.globalX } + listOfNotNull(userPosition?.first)
+            val allYs = devices.mapNotNull { it.globalY } + listOfNotNull(userPosition?.second)
+
+            // Jeśli nie ma żadnych urządzeń, przerywamy rysowanie
+            if (allXs.isEmpty() || allYs.isEmpty()) return@Canvas
+
+            // 2. Szukamy skrajnych wartości (rozmiar strefy)
+            val minX = allXs.minOrNull() ?: 0.0
+            val maxX = allXs.maxOrNull() ?: 0.0
+            val minY = allYs.minOrNull() ?: 0.0
+            val maxY = allYs.maxOrNull() ?: 0.0
+
+            // 3. Obliczamy szerokość i wysokość w fizycznych metrach
+            // Dodajemy 1.5 metra "marginesu" z każdej strony, żeby obiekty nie dotykały krawędzi ekranu
+            val paddingMeters = 1.5
+            val physicalWidth = (maxX - minX + 2 * paddingMeters).toFloat()
+            val physicalHeight = (maxY - minY + 2 * paddingMeters).toFloat()
+
+            // 4. DYNAMICZNA SKALA  (piksele na metr)
+            // Bierzemy mniejszą wartość, aby cała strefa na pewno zmieściła się na ekranie
+            val scaleX = size.width / physicalWidth
+            val scaleY = size.height / physicalHeight
+            val scale = minOf(scaleX, scaleY)
+
+            // 5. Wyliczamy środek i nowy początek układu współrzędnych (0,0)
+            val centerX = ((minX + maxX) / 2).toFloat()
+            val centerY = ((minY + maxY) / 2).toFloat()
+
+            // Przesuwamy punkt startowy, aby środek naszej strefy trafił idealnie w środek Canvasu
+            val originX = (size.width / 2f) - (centerX * scale)
+            val originY = (size.height / 2f) + (centerY * scale) // Plus, bo oś Y rośnie do góry
+
+            // 6. Rysowanie dynamicznej siatki (kratki co 1 metr)
+            val startGridX = Math.floor(minX - paddingMeters).toInt()
+            val endGridX = Math.ceil(maxX + paddingMeters).toInt()
+            for (i in startGridX..endGridX) {
+                val gridX = originX + (i * scale)
+                drawLine(Color.DarkGray, Offset(gridX, 0f), Offset(gridX, size.height), 1f)
+            }
+
+            val startGridY = Math.floor(minY - paddingMeters).toInt()
+            val endGridY = Math.ceil(maxY + paddingMeters).toInt()
+            for (i in startGridY..endGridY) {
+                val gridY = originY - (i * scale)
+                drawLine(Color.DarkGray, Offset(0f, gridY), Offset(size.width, gridY), 1f)
+            }
+
+            // 7. Rysowanie Urządzeń z Bazy (Kotwice i Tagi)
+            devices.forEach { device ->
+                val x = device.globalX?.toFloat() ?: return@forEach
+                val y = device.globalY?.toFloat() ?: return@forEach
+
+                // Tłumaczymy metry na piksele (zwróć uwagę na minus przy osi Y)
+                val canvasX = originX + (x * scale)
+                val canvasY = originY - (y * scale)
+
+                if (device.deviceType == "UWB_ANCHOR") {
+                    // Kotwica UWB = Niebieski Kwadrat
+                    drawRect(
+                        color = Color.Blue,
+                        topLeft = Offset(canvasX - 15f, canvasY - 15f),
+                        size = androidx.compose.ui.geometry.Size(30f, 30f)
+                    )
+                } else {
+                    // Cel BLE = Szare Koło
+                    drawCircle(
+                        color = Color.LightGray,
+                        radius = 12f,
+                        center = Offset(canvasX, canvasY)
+                    )
+                }
+            }
+
+            // 3. Rysowanie Użytkownika (Wynik algorytmu)
+            userPosition?.let { (x, y) ->
+                val canvasX = originX + (x.toFloat() * scale)
+                val canvasY = originY - (y.toFloat() * scale)
+
+                // Użytkownik = Czerwona Kropka
+                drawCircle(
+                    color = Color.Red,
+                    radius = 18f,
+                    center = Offset(canvasX, canvasY)
+                )
             }
         }
     }

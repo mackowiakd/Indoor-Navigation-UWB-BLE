@@ -42,11 +42,11 @@ Written in **Native Kotlin** (Jetpack Compose, Coroutines):
 * **Offline-First Cache:** The building's topology and POI map are pre-fetched via Retrofit into a local RAM Cache (Single Source of Truth), ensuring navigation continues seamlessly in areas without Wi-Fi (e.g., basements).
 
 ### 3. Infrastructure & Backend (Database-as-Code)
-A robust data layer running locally via **Docker Compose**:
-* **PostgreSQL (Star Schema):** Stores `Dim_Topology`, `Dim_IoT_Devices`, and hierarchical `Dim_Navigation_Targets`.
+A robust data layer hosted in the cloud to ensure synchronization across the development team:
+* **Supabase (Cloud PostgreSQL):** Stores the environmental graph including `Dim_Topology`, `Dim_IoT_Devices` (with X, Y, Z coordinates for 2D/3D positioning), and hierarchical `Dim_Navigation_Targets`.
 * **Smart SQL Triggers:** The database features automated normalization. Inserting a new navigation target via MAC address automatically triggers a PL/pgSQL function to inherit the `Location_ID` from the physical device table, preventing data anomalies.
-* **PostgREST (Zero-Code API):** Automatically exposes the PostgreSQL schema as a rapid, fully functional REST API (`http://localhost:3000`) consumed by the Android App.
-* **Automated Provisioning:** A `db_init.py` script acts as Infrastructure-as-Code, capable of fully rebuilding the database structure and populating it with test data/simulated telemetry in seconds.
+* **PostgREST API:** Supabase automatically exposes the database schema as a fully functional REST API, protected by JWT authentication, which is consumed by the Android App via Retrofit.
+* **Automated Provisioning (Infrastructure-as-Code):** The `/DB/db_init_app.py` script acts as the Single Source of Truth for the team. Running this script remotely resets the cloud database structure and populates it with the latest 2D/3D hardware coordinates and semantic targets in seconds.
   
 ## 📂 Repository Structure
 
@@ -54,7 +54,7 @@ This repository is organized as a Monorepo containing hardware firmware, testing
 
 - `/firmware` - C++ / PlatformIO code for the ESP32 nodes (UWB Initiators, UWB Responders, BLE Scanners).
 - `/app` - The Android mobile application (Kotlin) responsible for data processing, topology management, and connection handling.
-- `/DB` - Database-as-Code configurations (`docker-compose.yml`, Python initialization scripts, SQL dumps).
+- `/DB` - Database-as-Code configurations (Python initialization scripts, SQL dumps).
 - `/scripts` - Python and Bash scripts used for telemetry generation and testing.
 - `/docs` - Project documentation, architectural diagrams, and mathematical models.
 

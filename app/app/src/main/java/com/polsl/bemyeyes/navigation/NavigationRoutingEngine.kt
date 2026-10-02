@@ -1,5 +1,6 @@
 package com.polsl.bemyeyes.navigation
 
+import com.polsl.bemyeyes.navigation.dataBase.BuildingTopologyDatabase
 import com.polsl.bemyeyes.navigation.dataBase.IoTDevice
 import com.polsl.bemyeyes.navigation.dataBase.NavigationTarget
 import kotlin.math.roundToInt
@@ -20,14 +21,7 @@ class NavigationRoutingEngine(
     private var previousY: Double? = null
     // ID urządzeń, które już minęliśmy w tej sesji (żeby nie powtarzać komunikatu co 3 sekundy)
     private val announcedPoisInStep = mutableSetOf<String>()
-
-    private var currentTarget: NavigationTarget? = null // Dokąd idę?
-
-
-
-    private var lastPassAnnouncementTimeMs: Long = 0
-    private val PASSING_THRESHOLD_METERS = 2.0
-    private val ANNOUNCEMENT_COOLDOWN_MS = 8000
+    private var currentTarget: NavigationTarget? = null
     private var lastArrivalAnnouncementTimeMs = 0L   // Kiedy ostatnio powiedziano "Cel osiągnięty / Jesteś przed..."
     private var lastProximityAnnouncementTimeMs = 0L // Kiedy ostatnio powiedziano "Zbliżasz się..."
 
@@ -37,6 +31,7 @@ class NavigationRoutingEngine(
 
     //--zmienne stanu (przsylanie listy urzadzen do espa) --
     var currentLocationId: Int? = null // Gdzie aktualnie jestem? (do Cold Startu)
+    var onPositionUpdated: ((Double, Double) -> Unit)? = null
     private var lastTransitionTime: Long = 0  // Kiedy ostatnio zmieniliśmy strefę?
 
     // Ustawienia systemu
@@ -45,6 +40,10 @@ class NavigationRoutingEngine(
     // --- ZMIENNE WATCHDOGA ---
     private var watchdogJob: Job? = null
     private var lastTargetSignalTime: Long = 0L
+    // Pamięta ostatnio zmierzony dystans do każdej kotwicy
+    private val latestAnchorDistances = mutableMapOf<IoTDevice,Double >()
+
+
     // =========================================================================
     // AKCJE UŻYTKOWNIKA (Wywoływane z MainActivity po kliknięciu przycisku)
     // =========================================================================
@@ -61,6 +60,7 @@ class NavigationRoutingEngine(
         previousX = null
         previousY = null
         announcedPoisInStep.clear()
+        latestAnchorDistances.clear()
     }
     fun setNavigationTarget(target: NavigationTarget) {
         // RESETUJEMY FLAGI PRZY WYBORZE NOWEGO CELU!
@@ -98,40 +98,11 @@ class NavigationRoutingEngine(
             }
         }
     }
-    /**
-     * Główna funkcja wyliczenia pozycji 2D z 2 kotwic (wywoływana w strumieniu telemetrii UWB)
-     */
-    fun calculateUserPosition2D(anchor1Mac: String, d1: Double, anchor2Mac: String, d2: Double) {
-        val a1 = buildingTopologyDB.getDeviceByMac(anchor1Mac) ?: return
-        val a2 = buildingTopologyDB.getDeviceByMac(anchor2Mac) ?: return
 
-        // Pobieramy współrzędne globalne kotwic z bazy danych
-        val x1 = a1.globalX ?: return
-        val y1 = a2.globalY ?: return
-        val x2 = a2.globalX ?: return
-        val y2 = a2.globalY ?: return
 
-        // 1. Dystans między kotwicami obliczany z bazy danych
-        val D = Math.hypot(x2 - x1, y2 - y1)
-        if (D < 0.1) return // Ochrona przed dzieleniem przez zero
-
-        // 2. Rzutowanie pozycji (względny dystans wzdłuż osi)
-        val distFromA1 = (d1 * d1 - d2 * d2 + D * D) / (2 * D)
-
-        // 3. Proporcja położenia
-        val t = distFromA1 / D
-
-        // 4. Interpolacja liniowa - Pozycja 2D użytkownika na osi korytarza
-        val currentX = x1 + t * (x2 - x1)
-        val currentY = y1 + t * (y2 - y1)
-
-        // Odpalamy analizę otoczenia
-        evaluatePassingObjects2D(currentX, currentY)
-    }
-
-    /**
-     * Analiza iloczynu wektorowego pod kątem lewej/prawej strony
-     */
+    // =============================================================
+    // Analiza iloczynu wektorowego pod kątem lewej/prawej strony
+    //==========================================================
     private fun evaluatePassingObjects2D(currentX: Double, currentY: Double) {
         // Jeśli nie ma historii, zapisujemy obecny punkt i czekamy na kolejną paczkę danych
         if (previousX == null || previousY == null) {
@@ -144,37 +115,35 @@ class NavigationRoutingEngine(
         val moveDx = currentX - previousX!!
         val moveDy = currentY - previousY!!
 
+        val vLength = Math.hypot(moveDx, moveDy)
         // Filtrowanie szumu: jeśli użytkownik stoi w miejscu, nie wyliczamy kierunku
-        if (Math.hypot(moveDx, moveDy) < 0.4) return
+        if (vLength < 0.4) return
 
-        // Pobieramy z bazy wszystkie cele mikro (POI) dla obecnej strefy
+        // Pobieramy z bazy wszystkie cele mikro (POI) dla obecnej strefy -> opcja rozszerzenia na Macro anchros
         val activePOIs = buildingTopologyDB.getMicroTargets(currentLocationId)
 
         for (target in activePOIs) {
 
-            // 🔥 KLUCZOWY KROK: Wyciągamy fizyczne urządzenie z bazy po adresie MAC,
-            // aby dobrać się do jego współrzędnych globalnych X i Y
             val device = buildingTopologyDB.getDeviceByMac(target.associatedMac ?: "") ?: continue
 
-            // Teraz bezpiecznie wyciągamy współrzędne 2D z obiektu device!
+            // wyciągamy współrzędne 2D z obiektu device!
             val poiX = device.globalX ?: continue
             val poiY = device.globalY ?: continue
+            // Wektor do obiektu
+            val poiDx = poiX - currentX
+            val poiDy = poiY - currentY
+            // 1. ILOCZYN WEKTOROWY (Cross Product)
+            val crossProduct = (moveDx * poiDy) - (moveDy * poiDx)
 
-            // Obliczamy odległość do obiektu
-            val distanceToPoi = Math.hypot(poiX - currentX, poiY - currentY)
+            // 2. ILOCZYN SKALARNY (Dot Product)
+            val dotProduct = (moveDx * poiDx) + (moveDy * poiDy)
 
-            // Jeśli minęliśmy obiekt (jest w promieniu strefy "Mijasz", np. 1.8 metra)
-            if (distanceToPoi <= 1.8) {
-
+            // 3. FIZYCZNE ODLEGŁOŚCI WZGLĘDEM KIERUNKU TWOJEGO RUCHU (magia algebry!)
+            val lateralDistance = Math.abs(crossProduct) / vLength // Dystans w bok (lewo/prawo)
+            val forwardDistance = dotProduct/vLength
+            if (lateralDistance <= 4.0 && forwardDistance in -0.5..1.5) {
                 // Sprawdzamy czy już o nim nie mówiliśmy przed chwilą
                 if (announcedPoisInStep.contains(target.associatedMac)) continue
-
-                // Wektor od użytkownika do obiektu (p)
-                val poiDx = poiX - currentX
-                val poiDy = poiY - currentY
-
-                //  ILOCZYN WEKTOROWY 2D (Wyznacznik macierzy)
-                val crossProduct = (moveDx * poiDy) - (moveDy * poiDx)
 
                 // Strefa martwa: jeśli crossProduct jest bliski zero, obiekt leży dokładnie przed/za nami
                 if (Math.abs(crossProduct) < 0.05) continue
@@ -186,7 +155,7 @@ class NavigationRoutingEngine(
             } else {
                 // Gdy użytkownik oddali się od obiektu, usuwamy go z listy ogłoszonych,
                 // żeby system mógł go ogłosić, gdy użytkownik będzie wracał korytarzem
-                if (distanceToPoi > 3.0) {
+                if (forwardDistance < -1.0 || lateralDistance > 5.0) {
                     announcedPoisInStep.remove(target.associatedMac)
                 }
             }
@@ -204,8 +173,7 @@ class NavigationRoutingEngine(
         // 1. Szukamy, czy to urządzenie z Cache'u? ( w senie czy nie zlapalismy silnego sygnalu (przy cold start) z np kogos sluchawek BT -> zwraca null
         val scannedDev = buildingTopologyDB.cachedDevices.find { it.macAddress == macAddress } ?: return null
 
-
-        // UWAGA: Sprawdzamy, czy urządzenie, które usłyszeliśmy, wymusza zmianę lokalizacji
+        // Sprawdzamy, czy urządzenie, które usłyszeliśmy, wymusza zmianę lokalizacji
         // Dzieje się tak podczas ZIMNEGO STARTU (currentLocationId == null)
         // LUB gdy złapaliśmy Trigger w windzie
         if (currentLocationId != scannedDev.locationId) {
@@ -216,13 +184,12 @@ class NavigationRoutingEngine(
             if(currentLocationId == null){
                 // Zwracamy listę nowych urządzeń OD RAZU (pierwsze uruchomienie)
                 currentLocationId = scannedDev.locationId
+                latestAnchorDistances.clear()
                 println("nowa LOKALIZACJI : $currentLocationId")
                 //zapis czasu na kolejne pomiary
                 lastTransitionTime = currentTime
-                // ========================================================
-                //  BRAKUJĄCY CALLBACK DLA COLD STARTU!
-                // ========================================================
-                onLocationChanged?.invoke(currentLocationId!!)
+
+                onLocationChanged?.invoke(currentLocationId!!) //CALLBACK DLA COLD STARTU!
                 return buildingTopologyDB.getDevicesForLocation(currentLocationId!!)
             }
 
@@ -250,8 +217,6 @@ class NavigationRoutingEngine(
 
     // =========================================================================
     // AKCJE Z BLUETOOTHA (Logika mijania i dotarcia)
-
-    //- obsluga ID z kotwicy (rzutowanie na opwiedni format z DB?)
     // =========================================================================
     fun processNewTelemetryData(macAddress : String,distanceOrRssi: Double) {
 
@@ -263,13 +228,10 @@ class NavigationRoutingEngine(
 
             if (currentTarget!!.isMacroTarget) {
                 announceDistanceProgress(detectedDevice,distanceOrRssi)
-                // TRYB MAKRO: Osiągamy cel, jeśli zlapaliśmy sygnał z JAKIEGOKOLWIEK
-                // urządzenia, które leży w docelowym Location_ID
-
+                // TRYB MAKRO: Osiągamy cel, jeśli zlapaliśmy sygnał z JAKIEGOKOLWIEK urządzenia, które leży w docelowym Location_ID
                 speechService.announceImportant("Jesteś w strefie: ${currentTarget!!.name}. Wybierz teraz dokładny cel z listy.")
-                currentTarget = null // Osiągnięto cel, resetujemy!
+                currentTarget = null
 
-                // UWAGA: UI samo się tu zaktualizuje, bo zmieni się currentLocationId
 
             } else {
                 // TRYB MIKRO: Mierzymy odległość tylko do JEDNEGO konkretnego adresu MAC
@@ -278,36 +240,40 @@ class NavigationRoutingEngine(
                 }
             }
         }
+        //pozycjonowanie
+        if (detectedDevice.deviceType == "UWB_ANCHOR") {
+            // Aktualizujemy ostatnią znaną odległość od tej kotwicy
+            latestAnchorDistances[detectedDevice] = distanceOrRssi
+             // Szukamy, ile z naszych "usłyszanych" kotwic ma fizyczne współrzędne w bazie
+            val points =  mutableListOf<RangedPoint>()
+            for ((deviceInMap, dist) in latestAnchorDistances) {
+                if (deviceInMap.globalX != null && deviceInMap.globalY != null) {
+                    points.add(RangedPoint(deviceInMap.globalX, deviceInMap.globalY, dist))
+                }
+            }
+            // Jeśli widzimy przynajmniej 3 kotwice (albo 2, jeśli użyjesz strategii korytarzowej)
+            if (points.size >= 2) {
+                val strategy: PositioningStrategy = if (points.size == 2) {
+                    TwoAnchorCorridorPositioningStrategy() // Uruchomi się podczas Twoich testów 1D
+                } else  {
+                    TrilaterationStrategy() // Uruchomi się domyślnie, gdy dokupisz trzecią kotwicę
+                }
 
-        // 3. LOGIKA MIJANIA INNYCH OBIEKTÓW PO DRODZE (Eksploracja tła)
-        if (distanceOrRssi <= PASSING_THRESHOLD_METERS) {
-
-            // Upewniamy się, że nie mówimy "Mijasz biurko", jeśli biurko jest naszym głównym celem
-            val isMyMainTarget = (currentTarget != null && !currentTarget!!.isMacroTarget && macAddress == currentTarget!!.associatedMac)
-
-            if (!isMyMainTarget) {
-                // Wywołujemy Twoją odświeżoną funkcję!
-                evaluatePathAndAnnounce(detectedDevice)
+                val myPosition = strategy.calculatePosition(points) // send to map ploting
+                if (myPosition != null) {
+                    // Przekazujemy (X, Y) do logiki wektorowej
+                    evaluatePassingObjects2D(myPosition.first, myPosition.second) //jako arg przesylac liste urzadzen -> micro/macro/micro&macro/
+                    onPositionUpdated?.invoke(myPosition.first, myPosition.second)
+                }
             }
         }
+        // 3. LOGIKA MIJANIA INNYCH OBIEKTÓW (Eksploracja tła) -> wswzytko teraz w evaluatePassingObjects2D
+
     }
 
     // =========================================================================
     // FUNKCJE POMOCNICZE AUDIO
     // =========================================================================
-
-    private fun evaluatePathAndAnnounce(detectedDevice: IoTDevice) {
-        val currentTime = System.currentTimeMillis()
-
-        // Sprawdzamy Cooldown (żeby nie spamować użytkownika)
-        if (currentTime - lastPassAnnouncementTimeMs > ANNOUNCEMENT_COOLDOWN_MS) {
-            lastPassAnnouncementTimeMs = currentTime
-
-            // String Interpolation: wrzucamy zmienną prosto do cudzysłowu!
-            // Używamy semanticRole, bo to tam w bazie trzymamy opis np. "Ekspres do kawy"
-            speechService.announceBackground("Mijasz: ${detectedDevice.semanticRole}")
-        }
-    }
     private fun announceDistanceProgress(device: IoTDevice,distance: Double) {
         val distanceInt = distance.roundToInt()
         val dest = currentTarget ?: return // Używamy nowej zmiennej currentTarget!
@@ -315,10 +281,11 @@ class NavigationRoutingEngine(
 
         lastTargetSignalTime = currentTime // tzn ze dostalismy syganl z targetu
 
+        //todo implem 2D vector logic to determine direction (as in evaluatePassingObjects2D) both should used one file - VectorMath.kt
+
         if (device.deviceType == "UWB_ANCHOR") {
             // =======================================================
-            // ŚCIEŻKA UWB: Dokładne odliczanie ("Autostrada")
-            // Scenariusz: Finisz (1.5m) -> Tutaj kończymy podróż!
+            // ŚCIEŻKA UWB: Dokładne odliczanie metrow
             if (distance <= 1.5) {
                 if (currentTime - lastArrivalAnnouncementTimeMs > TARGET_ZONE_COOLDOWN_MS) {
                     lastArrivalAnnouncementTimeMs = currentTime
@@ -365,12 +332,10 @@ class NavigationRoutingEngine(
                 }
             }
         }
-        else if (device.deviceType == "BLE_BEACON") {
+        else if (device.deviceType == "BLE_BEACON") { //dodac logie z passing2D (orientacja przestrzenna)
             // =======================================================
             // ŚCIEŻKA BLE: Logika rozmyta (Brak odliczania metrów!)
             // =======================================================
-            // Zamiast czytać przeskakujące metry, odpalamy komunikaty
-            // tylko po przekroczeniu "magicznych barier" bliskości.
 
             // Bariera 1: Cel osiągnięty (Bardzo mocny sygnał BLE)
             if (distance <= 1.5 ) {
