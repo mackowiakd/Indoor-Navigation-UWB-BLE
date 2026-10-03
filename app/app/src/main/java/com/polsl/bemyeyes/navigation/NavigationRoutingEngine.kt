@@ -114,7 +114,6 @@ class NavigationRoutingEngine(
         // Wektor Twojego ruchu: skąd-dokąd (v)
         val moveDx = currentX - previousX!!
         val moveDy = currentY - previousY!!
-
         val vLength = Math.hypot(moveDx, moveDy)
         // Filtrowanie szumu: jeśli użytkownik stoi w miejscu, nie wyliczamy kierunku
         if (vLength < 0.4) return
@@ -125,37 +124,35 @@ class NavigationRoutingEngine(
         for (target in activePOIs) {
 
             val device = buildingTopologyDB.getDeviceByMac(target.associatedMac ?: "") ?: continue
-
             // wyciągamy współrzędne 2D z obiektu device!
             val poiX = device.globalX ?: continue
             val poiY = device.globalY ?: continue
             // Wektor do obiektu
             val poiDx = poiX - currentX
             val poiDy = poiY - currentY
-            // 1. ILOCZYN WEKTOROWY (Cross Product)
-            val crossProduct = (moveDx * poiDy) - (moveDy * poiDx)
+            val relPos=calculateRelativePosition(moveDx, moveDy, poiDx, poiDy)
 
-            // 2. ILOCZYN SKALARNY (Dot Product)
-            val dotProduct = (moveDx * poiDx) + (moveDy * poiDy)
-
-            // 3. FIZYCZNE ODLEGŁOŚCI WZGLĘDEM KIERUNKU TWOJEGO RUCHU (magia algebry!)
-            val lateralDistance = Math.abs(crossProduct) / vLength // Dystans w bok (lewo/prawo)
-            val forwardDistance = dotProduct/vLength
-            if (lateralDistance <= 4.0 && forwardDistance in -0.5..1.5) {
+            if (relPos.lateralDistance <= 4.0 && relPos.forwardDistance in -0.5..1.5) {
                 // Sprawdzamy czy już o nim nie mówiliśmy przed chwilą
                 if (announcedPoisInStep.contains(target.associatedMac)) continue
 
                 // Strefa martwa: jeśli crossProduct jest bliski zero, obiekt leży dokładnie przed/za nami
-                if (Math.abs(crossProduct) < 0.05) continue
+                if (relPos.isDeadZone){
+                    if(relPos.forwardDistance>0){
+                        speechService.announceBackground(" ${target.name} na przeciwko Ciebie")
+                        //  ZABEZPIECZENIE PRZED SPAMOWANIEM TTS
+                        announcedPoisInStep.add(target.associatedMac ?: "")
+                    }
+                     // Przerywamy dalszą analizę (lewo/prawo) dla tego obiektu, bo już o nim powiedzieliśmy
+                    continue
+                }
 
-                val side = if (crossProduct > 0) "lewej" else "prawej"
-
-                speechService.announceBackground("Mijasz ${target.name} po Twojej $side stronie.")
+                speechService.announceBackground("Mijasz ${target.name} po Twojej $relPos.side stronie.")
                 announcedPoisInStep.add(target.associatedMac ?: "")
             } else {
                 // Gdy użytkownik oddali się od obiektu, usuwamy go z listy ogłoszonych,
                 // żeby system mógł go ogłosić, gdy użytkownik będzie wracał korytarzem
-                if (forwardDistance < -1.0 || lateralDistance > 5.0) {
+                if (relPos.forwardDistance < -1.0 || relPos.lateralDistance > 5.0) {
                     announcedPoisInStep.remove(target.associatedMac)
                 }
             }
@@ -220,26 +217,11 @@ class NavigationRoutingEngine(
     // =========================================================================
     fun processNewTelemetryData(macAddress : String,distanceOrRssi: Double) {
 
+        var myPosition :  Pair<Double, Double>? = null
         // 1. Zidentyfikuj, co usłyszało ESP32
         val detectedDevice = buildingTopologyDB.getDeviceByMac(macAddress) ?: return
 
-        // 2. LOGIKA DOTARCIA DO CELU (Czy jestem blisko tego, co zaklikałem w UI?)
-        if (currentTarget != null) {
 
-            if (currentTarget!!.isMacroTarget) {
-                announceDistanceProgress(detectedDevice,distanceOrRssi)
-                // TRYB MAKRO: Osiągamy cel, jeśli zlapaliśmy sygnał z JAKIEGOKOLWIEK urządzenia, które leży w docelowym Location_ID
-                speechService.announceImportant("Jesteś w strefie: ${currentTarget!!.name}. Wybierz teraz dokładny cel z listy.")
-                currentTarget = null
-
-
-            } else {
-                // TRYB MIKRO: Mierzymy odległość tylko do JEDNEGO konkretnego adresu MAC
-                if (macAddress == currentTarget!!.associatedMac) {
-                    announceDistanceProgress(detectedDevice,distanceOrRssi)
-                }
-            }
-        }
         //pozycjonowanie
         if (detectedDevice.deviceType == "UWB_ANCHOR") {
             // Aktualizujemy ostatnią znaną odległość od tej kotwicy
@@ -259,11 +241,28 @@ class NavigationRoutingEngine(
                     TrilaterationStrategy() // Uruchomi się domyślnie, gdy dokupisz trzecią kotwicę
                 }
 
-                val myPosition = strategy.calculatePosition(points) // send to map ploting
+               myPosition = strategy.calculatePosition(points) // send to map ploting
                 if (myPosition != null) {
                     // Przekazujemy (X, Y) do logiki wektorowej
                     evaluatePassingObjects2D(myPosition.first, myPosition.second) //jako arg przesylac liste urzadzen -> micro/macro/micro&macro/
                     onPositionUpdated?.invoke(myPosition.first, myPosition.second)
+                }
+            }
+        }
+        // 2. LOGIKA DOTARCIA DO CELU (Czy jestem blisko tego, co zaklikałem w UI?)
+        if (currentTarget != null && myPosition !=null) {
+
+            if (currentTarget!!.isMacroTarget) {
+                announceDistanceProgress(detectedDevice,distanceOrRssi, myPosition.first, myPosition.second)
+                // TRYB MAKRO: Osiągamy cel, jeśli zlapaliśmy sygnał z JAKIEGOKOLWIEK urządzenia, które leży w docelowym Location_ID
+                speechService.announceImportant("Jesteś w strefie: ${currentTarget!!.name}. Wybierz teraz dokładny cel z listy.")
+                currentTarget = null
+
+
+            } else {
+                // TRYB MIKRO: Mierzymy odległość tylko do JEDNEGO konkretnego adresu MAC
+                if (macAddress == currentTarget!!.associatedMac) {
+                    announceDistanceProgress(detectedDevice,distanceOrRssi, myPosition.first, myPosition.second )
                 }
             }
         }
@@ -274,14 +273,37 @@ class NavigationRoutingEngine(
     // =========================================================================
     // FUNKCJE POMOCNICZE AUDIO
     // =========================================================================
-    private fun announceDistanceProgress(device: IoTDevice,distance: Double) {
+    private fun announceDistanceProgress(device: IoTDevice,distance: Double, currentX: Double, currentY: Double) {
         val distanceInt = distance.roundToInt()
         val dest = currentTarget ?: return // Używamy nowej zmiennej currentTarget!
         val currentTime = System.currentTimeMillis()
 
         lastTargetSignalTime = currentTime // tzn ze dostalismy syganl z targetu
 
-        //todo implem 2D vector logic to determine direction (as in evaluatePassingObjects2D) both should used one file - VectorMath.kt
+        if (previousX == null || previousY == null ) {
+            previousX = currentX
+            previousY = currentY
+            return
+        }
+
+        // Wektor Twojego ruchu: skąd-dokąd (v)
+        val moveDx = currentX - previousX!!
+        val moveDy = currentY - previousY!!
+        val vLength = Math.hypot(moveDx, moveDy)
+        // Filtrowanie szumu: jeśli użytkownik stoi w miejscu, nie wyliczamy kierunku
+        if (vLength < 0.4) return
+
+
+        //val device = buildingTopologyDB.getDeviceByMac(IoTDevice.associatedMac ?: "")
+        // wyciągamy współrzędne 2D z obiektu device!
+        val poiX = device.globalX?:(0.0)
+        val poiY = device.globalY?:(0.0)
+        // Wektor do obiektu
+        val poiDx = poiX - currentX
+        val poiDy = poiY - currentY
+        val relPos=calculateRelativePosition(moveDx, moveDy, poiDx, poiDy)
+
+            //todo implem 2D vector logic to determine direction (as in evaluatePassingObjects2D) both should used one file - VectorMath.kt
 
         if (device.deviceType == "UWB_ANCHOR") {
             // =======================================================
@@ -295,7 +317,7 @@ class NavigationRoutingEngine(
                         speechService.announceImportant("Jesteś w strefie: ${dest.name}. Wybierz teraz dokładny cel z listy.")
                     } else {
                         // Jeśli w przyszłości podepniesz pod UWB cel mikro (np. konkretne biurko z kotwicą):
-                        speechService.announceImportant("Dotarłeś do celu. Jesteś przed ${dest.name}")
+                        speechService.announceImportant("Dotarłeś do celu.  ${dest.name} jest po $relPos.side stronie.")
                     }
 
                     //currentTarget = null //  logika powtarzania wtdty mija sie z zalozeniem
@@ -307,7 +329,7 @@ class NavigationRoutingEngine(
             if (distance > 1.5) {
                 if (distanceInt <= 10) {
                     if (distanceInt != lastAnnouncedDistanceInt) {
-                        speechService.announceBackground("$distanceInt ${getMeterSpelling(distanceInt)}")
+                        speechService.announceBackground("$distanceInt ${getMeterSpelling(distanceInt)} do ${dest.name} po stronie $relPos.side")
                         lastAnnouncedDistanceInt = distanceInt
                     }
                 } else {
@@ -356,6 +378,9 @@ class NavigationRoutingEngine(
                 }
             }
         }
+        // Aktualizacja historii
+        previousX = currentX
+        previousY = currentY
     }
 
     private fun getMeterSpelling(count: Int): String {
