@@ -1,13 +1,16 @@
 package com.polsl.bemyeyes
 
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.Context
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -51,6 +54,26 @@ class MainActivity : ComponentActivity() {
     private val dbSyncVersion = mutableStateOf(0) //oberwowany przez Compose - informuje o zmiane w DB
     private val autoCalibrationEngine = AutoCalibrationEngine()
 
+    // --- Klatka schodowa z pliku JSON (tryb 3D) ---
+    private lateinit var configStore: StairwellConfigStore
+    private var stairwellSession: StairwellSession? = null
+    private var localConfigActive = false // true = kotwice z pliku JSON zamiast z bazy danych
+    private val stairwellStatus = mutableStateOf("Brak wczytanej klatki (kotwice z bazy danych)")
+    private val stairwellWarnings = mutableStateListOf<String>()
+    private val stairwellSnapshot = mutableStateOf<StairwellSnapshot?>(null)
+    private val tagMacState = mutableStateOf(DEFAULT_TAG_MAC)
+
+    // Systemowy wybieracz plików (bez żadnych uprawnień): użytkownik wskazuje stairwell_config.json
+    private val pickConfigLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) loadConfigFromUri(uri)
+    }
+
+    private companion object {
+        const val DEFAULT_TAG_MAC = "A4:E5:7C:DE:BC:F2" // dotychczasowa wartość z kodu; zmienialna w UI
+        const val PREFS = "bemyeyes"
+        const val PREF_TAG_MAC = "tag_mac"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -84,6 +107,21 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+
+        // Klatka z pliku: zapisaną kopię wczytujemy PRZED fetchDatabase(), żeby baza jej nie nadpisała
+        configStore = StairwellConfigStore(this)
+        tagMacState.value = getSharedPreferences(PREFS, MODE_PRIVATE).getString(PREF_TAG_MAC, DEFAULT_TAG_MAC)
+            ?: DEFAULT_TAG_MAC
+        bleManager.onUwbMeasurement = { id, dist ->
+            val snapshot = stairwellSession?.onMeasurement(id, dist)
+            if (snapshot != null) {
+                runOnUiThread {
+                    stairwellSnapshot.value = snapshot
+                    userPositionState.value = Pair(snapshot.position.x, snapshot.position.y)
+                }
+            }
+        }
+        configStore.loadSaved()?.let { applyStairwellConfig(it, persist = false) }
 
         // W MainActivity.kt
         lifecycleScope.launch {
@@ -154,6 +192,26 @@ class MainActivity : ComponentActivity() {
                         currentLocation = currentLocation,
                         zoneDevices = zoneDevicesList,
                         userPosition = userPos,
+
+                        // --- Klatka schodowa z pliku JSON ---
+                        onLoadStairwellClick = { pickConfigLauncher.launch(arrayOf("*/*")) },
+                        onSendAnchorsClick = {
+                            val anchors = topologyDatabase.cachedDevices.filter { it.deviceType == "UWB_ANCHOR" }
+                            if (anchors.isEmpty()) {
+                                appToEspLogs.add(0, "❌ Brak kotwic - wczytaj klatkę z pliku albo dane z bazy.")
+                            } else {
+                                // tag zaczyna mierzyć dopiero po otrzymaniu listy kotwic
+                                bleManager.sendFilterToEsp(anchors)
+                            }
+                        },
+                        stairwellStatus = stairwellStatus.value,
+                        stairwellWarnings = stairwellWarnings,
+                        stairwellInfo = describeSnapshot(stairwellSnapshot.value),
+                        tagMac = tagMacState.value,
+                        onTagMacChange = { newMac ->
+                            tagMacState.value = newMac
+                            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(PREF_TAG_MAC, newMac).apply()
+                        },
 
                         // ✅ IMPLEMENTACJA REAKCJI NA RESET:
                         onClearNavigation = {
@@ -239,9 +297,87 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+    /**
+     * Wczytuje konfigurację klatki z JSON: kotwice z pliku zastępują dane z bazy, trilateracja 2D jest
+     * wyłączana, a pozycję liczy sesja 3D (filtry + solver + detekcja piętra).
+     */
+    private fun applyStairwellConfig(json: String, persist: Boolean): Boolean {
+        return try {
+            val config = StairwellConfig.fromJson(json)
+            val session = StairwellSession(config)
+            val levelNames = config.levels.sortedBy { it.z }.map { it.name }
+            session.floorTracker.onLevelChanged = { from, to ->
+                runOnUiThread {
+                    val fromName = from?.let { levelNames.getOrNull(it) } ?: "?"
+                    appToEspLogs.add(0, "🏢 Poziom: $fromName → ${levelNames.getOrNull(to) ?: to}")
+                }
+            }
+
+            topologyDatabase.cachedDevices = config.toDevices()
+            topologyDatabase.cachedTargets = emptyList()
+            routingEngine.use2dPositioning = false
+            routingEngine.currentLocationId = null // zimny start dla nowego zestawu kotwic
+            currentLocationIdState.value = null
+            userPositionState.value = null
+            stairwellSession = session
+            localConfigActive = true
+
+            stairwellWarnings.clear()
+            stairwellWarnings.addAll(config.validate())
+            stairwellStatus.value =
+                "✅ ${config.name.ifBlank { "(bez nazwy)" }}: ${config.anchors.size} kotwic, ${config.levels.size} poziomów (z pliku)"
+            stairwellSnapshot.value = null
+            dbSyncVersion.value += 1
+
+            if (persist) {
+                try {
+                    configStore.save(json)
+                } catch (e: Exception) {
+                    appToEspLogs.add(0, "⚠️ Nie udało się zapisać kopii konfiguracji: ${e.message}")
+                }
+            }
+            appToEspLogs.add(0, "📂 Wczytano klatkę z pliku. Kotwice: " + config.anchors.joinToString(", ") { espAnchorId(it.id) })
+            true
+        } catch (e: Exception) {
+            appToEspLogs.add(0, "❌ Błąd konfiguracji klatki: ${e.message}")
+            false
+        }
+    }
+
+    private fun loadConfigFromUri(uri: Uri) {
+        try {
+            applyStairwellConfig(configStore.readUri(uri), persist = true)
+        } catch (e: Exception) {
+            appToEspLogs.add(0, "❌ Nie można odczytać pliku: ${e.message}")
+        }
+    }
+
+    private fun describeSnapshot(s: StairwellSnapshot?): String {
+        if (s == null) return ""
+        val p = s.position
+        val floor = when (val f = s.floorState) {
+            is FloorState.AtLevel -> "na poziomie: ${f.name}"
+            is FloorState.OnStairs -> "na schodach, kierunek: ${f.direction}"
+            is FloorState.Unknown -> "poziom nieznany"
+        }
+        val flags = listOfNotNull(
+            if (p.ambiguous) "NIEJEDNOZNACZNE (odbicie lustrzane)" else null,
+            if (!p.insideVolume) "POZA BRYŁĄ KLATKI" else null
+        )
+        return String.format(
+            java.util.Locale.US,
+            "x=%.2f  y=%.2f  z=%.2f m\nRMS reszt: %.3f m, kotwic: %d\n%s",
+            p.x, p.y, p.z, p.rmsResidual, s.usedAnchors, floor
+        ) + flags.joinToString("") { "\n⚠ $it" }
+    }
+
     // Wyciągnięte do osobnej funkcji, żeby kod był czystszy
     private suspend fun fetchDatabase() {
         try {
+            if (localConfigActive) {
+                appToEspLogs.add(0, "ℹ️ Aktywna klatka z pliku JSON - pomijam pobieranie z bazy.")
+                return
+            }
             appToEspLogs.add(0, "📡 Łączę z PostgreSQL...")
             val allDevices = RetrofitClient.apiService.getAllDevices()
             val allTargets = RetrofitClient.apiService.getNavigationTargets()
@@ -279,7 +415,12 @@ class MainActivity : ComponentActivity() {
         val bluetoothAdapter = bluetoothManager.adapter
 
         if (bluetoothAdapter != null && bluetoothAdapter.isEnabled) {
-            val device = bluetoothAdapter.getRemoteDevice("A4:E5:7C:DE:BC:F2") // ZMIEŃ NA SWÓJ MAC ESP32!
+            val tagMac = tagMacState.value.trim().uppercase()
+            if (!BluetoothAdapter.checkBluetoothAddress(tagMac)) {
+                debugLogs.add(0, "BŁĄD: niepoprawny adres MAC tagu: '$tagMac'")
+                return
+            }
+            val device = bluetoothAdapter.getRemoteDevice(tagMac)
             bleManager.establishConnection(device, this)
         } else {
             debugLogs.add(0, "BŁĄD: Włącz Bluetooth w ustawieniach!")
@@ -310,6 +451,13 @@ fun NavigationScreen(
     onCalibrateZoneClick: (Int?) -> Unit,
     onCalibrateTagClick: (IoTDevice) -> Unit, // brak UI dla wyboru taga do kalib (dla  konkretnego locationID)
     zoneDevices: List<IoTDevice>,
+    onLoadStairwellClick: () -> Unit,
+    onSendAnchorsClick: () -> Unit,
+    stairwellStatus: String,
+    stairwellWarnings: List<String>,
+    stairwellInfo: String,
+    tagMac: String,
+    onTagMacChange: (String) -> Unit,
     userPosition: Pair<Double, Double>?
 ) {
 
@@ -420,6 +568,46 @@ fun NavigationScreen(
         // ==========================================================
         // NOWY PANEL: MAPA 2D
         // ==========================================================
+        // ==========================================================
+        // PANEL: KLATKA SCHODOWA (plik JSON, pozycja 3D)
+        // ==========================================================
+        Text("🏢 Klatka schodowa (plik JSON)", style = MaterialTheme.typography.titleMedium)
+        OutlinedTextField(
+            value = tagMac,
+            onValueChange = onTagMacChange,
+            label = { Text("Adres MAC tagu (ESP32)") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onLoadStairwellClick, modifier = Modifier.weight(1f)) {
+                Text("Wczytaj klatkę (JSON)")
+            }
+            Button(onClick = onSendAnchorsClick, modifier = Modifier.weight(1f)) {
+                Text("Wyślij kotwice do ESP")
+            }
+        }
+        Text(stairwellStatus, fontSize = 12.sp)
+        stairwellWarnings.forEach { warning ->
+            Text("⚠ $warning", color = Color(0xFFFF9800), fontSize = 12.sp)
+        }
+        if (stairwellInfo.isNotEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
+            ) {
+                Text(
+                    stairwellInfo,
+                    color = Color.White,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(8.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+
         Text("📍 Podgląd Przestrzenny (Live)", style = MaterialTheme.typography.titleMedium)
         RoomMapCanvas(
             devices = zoneDevices,

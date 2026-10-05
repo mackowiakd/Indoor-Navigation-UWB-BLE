@@ -28,6 +28,8 @@ class BleConnectionManager(
     private var currentPayloadLimit: Int = 20
     //  Callback  dla wyników kalibracji
     var onCalibrationResultReceived: ((String) -> Unit)? = null
+    // Surowy pomiar UWB (ID kotwicy w formacie z ramki, dystans [m]); wołany z wątku GATT, nie z UI
+    var onUwbMeasurement: ((String, Double) -> Unit)? = null
     // Odpowiednik statycznych zmiennych z Javy (w Kotlinie trzymane w companion object)
     companion object {
         private const val TAG = "BLE_COMM"
@@ -176,6 +178,7 @@ class BleConnectionManager(
 
                     } else {
                             // TRYB NAWIGACJI: Stary kod, dane lecą do silnika routingu
+                        if (record.startsWith("U_")) onUwbMeasurement?.invoke(id, dist)
                         // 1. ZIMNY START: Pytamy silnik, czy ten MAC to nowe piętro?
                         // routingEngine sprawdzi to w bazie i ew. zwróci nam całą listę!
                         val newDevicesToSend = routingEngine.processScannedDevice(id, dist)

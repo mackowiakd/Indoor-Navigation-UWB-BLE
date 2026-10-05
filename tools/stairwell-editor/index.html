@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Edytor klatki schodowej</title>
+<!--
+  Edytor konfiguracji klatki schodowej (UWB 3D). Jeden plik, bez bibliotek, działa lokalnie w przeglądarce.
+  Dane NIE opuszczają komputera. Zdjęcia nie są zapisywane (tylko znaczniki, po nazwie pliku).
+  Eksport: JSON czytany przez StairwellConfig.fromJson (app/.../navigation/StairwellConfig.kt).
+  Wymiary w eksporcie są zawsze w metrach; pole "editorState" pozwala wczytać plik z powrotem bez utraty surowych wpisów.
+  Komórki liczbowe przyjmują jedną wartość albo kilka pomiarów rozdzielonych ; lub spacją (np. "120,5; 121; 119,8") - liczona jest średnia i rozrzut.
+-->
+<style>
+:root{
+  --bg:#f6f7f9; --card:#ffffff; --text:#1c2128; --muted:#5b6573; --line:#d6dbe2;
+  --accent:#1f6feb; --accent2:#d4540b; --ok:#1a7f37; --warn:#9a6700; --err:#cf222e; --fill:rgba(31,111,235,.12);
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0f1318; --card:#171c23; --text:#e6e9ee; --muted:#9aa4b2; --line:#2c3441;
+    --accent:#58a6ff; --accent2:#ff9b52; --ok:#3fb950; --warn:#d29922; --err:#ff7b72; --fill:rgba(88,166,255,.15); }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+header h1{font-size:16px;margin:0 auto 0 0}
+button,select,input,textarea{font:inherit;color:var(--text)}
+button{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.small{padding:1px 7px}
+input[type=text],select,textarea{background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:4px 6px;width:100%}
+input:focus,textarea:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
+main{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:14px;padding:14px 16px;max-width:1500px;margin:0 auto}
+@media (max-width:1000px){ main{grid-template-columns:1fr} }
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:14px}
+section h2{font-size:14px;margin:0 0 8px}
+.hint{color:var(--muted);font-size:12px;margin:0 0 8px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
+.row label{min-width:90px;color:var(--muted)}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%}
+th{font-weight:600;text-align:left;color:var(--muted);font-size:12px;padding:2px 4px}
+td{padding:2px 3px;vertical-align:top}
+td input{min-width:64px}
+td.ctl{white-space:nowrap}
+.info{display:block;font-size:11px;color:var(--muted)}
+.info.err{color:var(--err)}
+canvas{width:100%;display:block;background:var(--bg);border:1px solid var(--line);border-radius:8px}
+#plan{height:340px} #side,#sideYZ{height:210px} #photo{height:360px;cursor:crosshair}
+ul.issues{list-style:none;padding:0;margin:0}
+ul.issues li{padding:3px 0;border-bottom:1px dashed var(--line)}
+li.error{color:var(--err)} li.warn{color:var(--warn)} li.info{color:var(--muted)} li.ok{color:var(--ok)}
+.thumbs{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+.thumbs button.active{border-color:var(--accent);background:var(--fill)}
+.sticky{position:sticky;top:58px}
+@media (max-width:1000px){ .sticky{position:static} }
+details summary{cursor:pointer;color:var(--muted)}
+textarea{min-height:90px;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Edytor klatki schodowej (UWB 3D)</h1>
+  <label>Jednostka wpisów:
+    <select id="unit" style="width:auto"><option value="m">m</option><option value="cm">cm</option><option value="mm">mm</option></select>
+  </label>
+  <button id="btnImport">Wczytaj JSON…</button>
+  <input id="fileImport" type="file" accept=".json,application/json" hidden>
+  <button id="btnCopy">Kopiuj JSON</button>
+  <button id="btnDownload" class="primary">Pobierz JSON</button>
+  <button id="btnClear">Wyczyść</button>
+</header>
+
+<main>
+<div>
+  <section>
+    <h2>1. Układ współrzędnych i bryła klatki</h2>
+    <p class="hint">Wymiary względem punktu bazowego (0,0,0); Z rośnie w górę. Liczby: jedna wartość albo kilka pomiarów rozdzielonych średnikiem lub spacją.</p>
+    <div class="row"><label for="name">Nazwa</label><input id="name" type="text" placeholder="np. Klatka B, budynek AEI"></div>
+    <div class="row"><label for="origin">Punkt bazowy i osie</label><textarea id="origin" style="min-height:54px" placeholder="np. (0,0,0) = naroże pierwszego stopnia; X wzdłuż biegu, Y w stronę okna"></textarea></div>
+    <div class="row"><label for="zMin">zMin (dół)</label><div style="flex:1"><input id="zMin" type="text" inputmode="decimal"><span class="info" id="zMinInfo"></span></div>
+      <label for="zMax" style="min-width:60px">zMax (góra)</label><div style="flex:1"><input id="zMax" type="text" inputmode="decimal"><span class="info" id="zMaxInfo"></span></div></div>
+  </section>
+
+  <section>
+    <h2>2. Wielokąt klatki w rzucie z góry</h2>
+    <p class="hint">Wierzchołki po kolei po obwodzie (dla "C": ściany zewnętrzne i szyb). Z jest opcjonalne (puste = 0) i służy do podglądu w widokach X–Z i Y–Z; solver używa obrysu z rzutu X–Y oraz zakresu zMin–zMax. Kolejność ↑↓ można zmieniać.</p>
+    <div class="tablewrap" id="tblPolygon"></div>
+    <div class="row"><button id="addPoly">+ wierzchołek</button><button id="revPoly">Odwróć kolejność</button></div>
+  </section>
+
+  <section>
+    <h2>3. Poziomy Z (piętra, podesty)</h2>
+    <div class="tablewrap" id="tblLevels"></div>
+    <div class="row"><button id="addLevel">+ poziom</button></div>
+  </section>
+
+  <section>
+    <h2>4. Kotwice UWB</h2>
+    <p class="hint">ID jak w ramce z ESP32 (np. 0x0001). Sigma = niepewność położenia kotwicy; puste = rozrzut z wielu pomiarów (min. 1 cm) albo 3 cm.</p>
+    <div class="tablewrap" id="tblAnchors"></div>
+    <div class="row"><button id="addAnchor">+ kotwica</button></div>
+  </section>
+
+  <section>
+    <h2>5. Punkty referencyjne (do oceny błędu)</h2>
+    <div class="tablewrap" id="tblRefs"></div>
+    <div class="row"><button id="addRef">+ punkt</button></div>
+  </section>
+
+  <section>
+    <details><summary>Wczytaj z wklejonego tekstu JSON</summary>
+      <textarea id="pasteJson" placeholder="Wklej tutaj zawartość pliku JSON"></textarea>
+      <div class="row"><button id="btnPaste">Wczytaj</button></div>
+    </details>
+  </section>
+</div>
+
+<div class="sticky">
+  <section>
+    <div class="row">
+      <span style="color:var(--muted)">Pokaż:</span>
+      <label style="min-width:0"><input type="checkbox" id="showVerts" checked> wierzchołki (W)</label>
+      <label style="min-width:0"><input type="checkbox" id="showLevels" checked> poziomy (L)</label>
+      <label style="min-width:0"><input type="checkbox" id="showAnchors" checked> kotwice (K)</label>
+      <label style="min-width:0"><input type="checkbox" id="showRefs" checked> punkty ref. (P)</label>
+      <label style="min-width:0"><input type="checkbox" id="showCoords" checked> współrzędne</label>
+    </div>
+    <h2>Podgląd z góry (X–Y)</h2>
+    <canvas id="plan"></canvas>
+    <h2 style="margin-top:10px">Podgląd z boku (X–Z)</h2>
+    <canvas id="side"></canvas>
+    <h2 style="margin-top:10px">Podgląd z boku (Y–Z)</h2>
+    <canvas id="sideYZ"></canvas>
+  </section>
+  <section>
+    <h2>Kontrola danych</h2>
+    <ul class="issues" id="issues"></ul>
+  </section>
+  <section>
+    <h2>Zdjęcia – znaczniki miejsc</h2>
+    <p class="hint">Zdjęcie (np. kartka z wymiarami lub fotografia klatki) jest tylko pomocą wizualną – współrzędnych w metrach nie da się z niego wyliczyć. Kliknij w zdjęcie, żeby dodać znacznik (np. K1, P3). Zdjęcia nie są zapamiętywane, znaczniki wracają po nazwie pliku.</p>
+    <input id="filePhotos" type="file" accept="image/*" multiple>
+    <div class="thumbs" id="thumbs"></div>
+    <canvas id="photo"></canvas>
+    <ul class="issues" id="markerList"></ul>
+  </section>
+</div>
+</main>
+
+<script>
+"use strict";
+const STORE_KEY = "stairwell-editor-v1";
+const UNIT = { m: 1, cm: 0.01, mm: 0.001 };
+
+const COLS = {
+  polygon: [{ key: "x", label: "X", num: true }, { key: "y", label: "Y", num: true }, { key: "z", label: "Z", num: true, ph: "0" }],
+  levels: [{ key: "name", label: "Nazwa", ph: "np. Piętro 7" }, { key: "z", label: "Z", num: true }],
+  anchors: [
+    { key: "id", label: "ID", ph: "0x0001" },
+    { key: "x", label: "X", num: true }, { key: "y", label: "Y", num: true }, { key: "z", label: "Z", num: true },
+    { key: "sigma", label: "Sigma", num: true, ph: "auto" }, { key: "note", label: "Uwagi", ph: "gdzie zamontowana" }
+  ],
+  refs: [
+    { key: "name", label: "Nazwa", ph: "np. P1" },
+    { key: "x", label: "X", num: true }, { key: "y", label: "Y", num: true }, { key: "z", label: "Z", num: true },
+    { key: "note", label: "Uwagi", ph: "np. 4. stopień" }
+  ]
+};
+// Prefiks numeru wiersza: W = wierzchołek wielokąta, L = poziom, K = kotwica, P = punkt referencyjny
+const ROW_PREFIX = { polygon: "W", levels: "L", anchors: "K", refs: "P" };
+const BLANK = {
+  polygon: () => ({ x: "", y: "", z: "" }),
+  levels: () => ({ name: "", z: "" }),
+  anchors: () => ({ id: "", x: "", y: "", z: "", sigma: "", note: "" }),
+  refs: () => ({ name: "", x: "", y: "", z: "", note: "" })
+};
+
+function defaultState() {
+  return {
+    unit: "m", name: "", origin: "", zMin: "", zMax: "",
+    polygon: [BLANK.polygon(), BLANK.polygon(), BLANK.polygon()],
+    levels: [BLANK.levels(), BLANK.levels()],
+    anchors: [BLANK.anchors(), BLANK.anchors(), BLANK.anchors()],
+    refs: [BLANK.refs()],
+    photoMarkers: []
+  };
+}
+let state = defaultState();
+
+// ---------- pomocnicze ----------
+function el(tag, props, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (k === "class") e.className = v;
+    else if (k === "value" || k === "textContent") e[k] = v;
+    else e.setAttribute(k, v);
+  }
+  e.append(...children);
+  return e;
+}
+const round4 = v => Math.round(v * 1e4) / 1e4;
+const fmt = v => (Number.isFinite(v) ? String(round4(v)) : "");
+
+// Komórka liczbowa: jedna wartość lub kilka (separator ; lub spacja), przecinek = przecinek dziesiętny.
+function parseCell(text) {
+  if (text == null) return null;
+  const parts = String(text).trim().split(/[;\s]+/).filter(Boolean);
+  if (!parts.length) return null;
+  const vals = parts.map(p => Number(p.replace(",", ".")));
+  if (vals.some(v => !Number.isFinite(v))) return { error: true };
+  const n = vals.length;
+  const mean = vals.reduce((a, b) => a + b, 0) / n;
+  const sd = n > 1 ? Math.sqrt(vals.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1)) : 0;
+  return { vals, n, mean, sd };
+}
+function updateInfo(text, span) {
+  const c = parseCell(text);
+  span.className = "info";
+  if (!c) { span.textContent = ""; return; }
+  if (c.error) { span.textContent = "⚠ niepoprawna liczba"; span.classList.add("err"); return; }
+  span.textContent = c.n > 1 ? `śr = ${fmt(c.mean)}, sd = ${fmt(c.sd)} (n=${c.n})` : "";
+}
+function normalizeId(raw) {
+  const clean = String(raw).trim().replace(/^0x/i, "");
+  if (!/^[0-9a-f]+$/i.test(clean)) return String(raw).trim();
+  return "0x" + parseInt(clean, 16).toString(16).padStart(4, "0");
+}
+
+// ---------- geometria ----------
+function pointInPoly(x, y, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = [poly[i].x, poly[i].y], [xj, yj] = [poly[j].x, poly[j].y];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+function distToBoundary(px, py, poly) {
+  let best = Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+    const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy) / len2));
+    best = Math.min(best, Math.hypot(px - (a.x + t * dx), py - (a.y + t * dy)));
+  }
+  return best;
+}
+function volumeContains(x, y, z, vol, margin) {
+  if (z < vol.zMin - margin || z > vol.zMax + margin) return false;
+  return pointInPoly(x, y, vol.polygon) || distToBoundary(x, y, vol.polygon) <= margin;
+}
+const orient = (a, b, c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+function selfIntersects(poly) {
+  const n = poly.length;
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+    if ((j + 1) % n === i || (i + 1) % n === j) continue;
+    const a = poly[i], b = poly[(i + 1) % n], c = poly[j], d = poly[(j + 1) % n];
+    if (orient(a, b, c) * orient(a, b, d) < 0 && orient(c, d, a) * orient(c, d, b) < 0) return true;
+  }
+  return false;
+}
+
+// ---------- stan -> model w metrach + kontrola ----------
+function resolve() {
+  const f = UNIT[state.unit] || 1;
+  const issues = [];
+  const add = (lvl, msg) => issues.push({ lvl, msg });
+  const num = (t, what) => {
+    const c = parseCell(t);
+    if (!c) return null;
+    if (c.error) { add("error", `Niepoprawna liczba: ${what}`); return null; }
+    return c;
+  };
+  const out = { name: state.name.trim(), origin: state.origin.trim(), units: "m",
+    volume: { polygon: [], zMin: null, zMax: null }, levels: [], anchors: [], referencePoints: [] };
+
+  const zMin = num(state.zMin, "zMin"), zMax = num(state.zMax, "zMax");
+  out.volume.zMin = zMin ? round4(zMin.mean * f) : null;
+  out.volume.zMax = zMax ? round4(zMax.mean * f) : null;
+
+  state.polygon.forEach((r, i) => {
+    const x = num(r.x, `wielokąt #${i + 1} X`), y = num(r.y, `wielokąt #${i + 1} Y`);
+    const vz = num(r.z, `wielokąt #${i + 1} Z`); // Z opcjonalne: puste = 0 (zgodność ze starszymi plikami)
+    if (x && y) out.volume.polygon.push({ x: round4(x.mean * f), y: round4(y.mean * f), z: vz ? round4(vz.mean * f) : 0, _n: i + 1 });
+    else if (x || y || String(r.x).trim() || String(r.y).trim()) add("error", `Wierzchołek #${i + 1} jest niepełny`);
+  });
+  state.levels.forEach((r, i) => {
+    const z = num(r.z, `poziom #${i + 1}`);
+    if (z) out.levels.push({ name: r.name.trim() || `Poziom ${i + 1}`, z: round4(z.mean * f), _n: i + 1 });
+    else if (r.name.trim()) add("error", `Poziom '${r.name}' nie ma wartości Z`);
+  });
+  state.anchors.forEach((r, i) => {
+    const label = r.id.trim() || `#${i + 1}`;
+    const cx = num(r.x, `kotwica ${label} X`), cy = num(r.y, `kotwica ${label} Y`), cz = num(r.z, `kotwica ${label} Z`);
+    const touched = [r.id, r.x, r.y, r.z, r.sigma].some(v => String(v).trim());
+    if (!touched) return;
+    if (!r.id.trim() || !cx || !cy || !cz) { add("error", `Kotwica ${label} jest niepełna (potrzebne ID, X, Y, Z)`); return; }
+    const sc = num(r.sigma, `kotwica ${label} sigma`);
+    const spreads = [cx, cy, cz].filter(c => c.n > 1).map(c => c.sd * f);
+    let sigma;
+    if (sc) sigma = sc.mean * f;
+    else if (spreads.length) sigma = Math.max(Math.max(...spreads), 0.01);
+    else sigma = 0.03;
+    if (sigma > 0.05) add("warn", `Kotwica ${label}: sigma ${fmt(sigma)} m przekracza założone 5 cm`);
+    const id = normalizeId(r.id);
+    if (!/^0x[0-9a-f]{4}$/.test(id)) add("warn", `Kotwica ${label}: ID nie wygląda na szesnastkowe (oczekiwano np. 0x0001)`);
+    out.anchors.push({ id, x: round4(cx.mean * f), y: round4(cy.mean * f), z: round4(cz.mean * f),
+      sigma: round4(sigma), note: r.note.trim(), _n: i + 1 });
+  });
+  state.refs.forEach((r, i) => {
+    const label = r.name.trim() || `#${i + 1}`;
+    const cx = num(r.x, `punkt ${label} X`), cy = num(r.y, `punkt ${label} Y`), cz = num(r.z, `punkt ${label} Z`);
+    const touched = [r.name, r.x, r.y, r.z].some(v => String(v).trim());
+    if (!touched) return;
+    if (!cx || !cy || !cz) { add("error", `Punkt ${label} jest niepełny (potrzebne X, Y, Z)`); return; }
+    out.referencePoints.push({ name: r.name.trim() || label, x: round4(cx.mean * f), y: round4(cy.mean * f),
+      z: round4(cz.mean * f), note: r.note.trim(), _n: i + 1 });
+  });
+
+  // --- kontrola spójności (odpowiada StairwellConfig.validate w aplikacji) ---
+  const poly = out.volume.polygon, vol = out.volume;
+  const hasVol = poly.length >= 3 && vol.zMin != null && vol.zMax != null && vol.zMin < vol.zMax;
+  if (poly.length < 3) add("error", "Wielokąt klatki wymaga co najmniej 3 wierzchołków");
+  if (vol.zMin == null || vol.zMax == null) add("error", "Podaj zMin i zMax");
+  else if (vol.zMin >= vol.zMax) add("error", "zMin musi być mniejsze od zMax");
+  if (poly.length >= 4 && selfIntersects(poly)) add("error", "Wielokąt przecina się – sprawdź kolejność wierzchołków");
+  if (out.levels.length < 2) add("warn", "Do wykrywania pięter potrzeba co najmniej 2 poziomów Z");
+  if (new Set(out.levels.map(l => l.z)).size !== out.levels.length) add("warn", "Poziomy Z się powtarzają");
+  if (hasVol) out.levels.filter(l => l.z < vol.zMin - 0.3 || l.z > vol.zMax + 0.3)
+    .forEach(l => add("warn", `Poziom '${l.name}' (z=${l.z}) leży poza zakresem Z klatki`));
+  if (out.anchors.length < 3) add("error", `Potrzeba co najmniej 3 kotwic (jest ${out.anchors.length})`);
+  if (new Set(out.anchors.map(a => a.id)).size !== out.anchors.length) add("error", "ID kotwic się powtarzają");
+  if (hasVol) out.anchors.filter(a => !volumeContains(a.x, a.y, a.z, vol, 0.3))
+    .forEach(a => add("warn", `Kotwica K${a._n} (${a.id}) leży poza bryłą klatki`));
+  if (hasVol) out.referencePoints.filter(p => !volumeContains(p.x, p.y, p.z, vol, 0.3))
+    .forEach(p => add("warn", `Punkt ${p.name} leży poza bryłą klatki`));
+  if (out.anchors.length >= 3) {
+    const [a, b, c] = out.anchors;
+    const u = [b.x - a.x, b.y - a.y, b.z - a.z], v = [c.x - a.x, c.y - a.y, c.z - a.z];
+    const cr = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    if (Math.hypot(...cr) / 2 < 0.05) add("error", "Pierwsze 3 kotwice są (prawie) współliniowe – trilateracja niemożliwa");
+  }
+  if (out.anchors.length >= 4) {
+    const [a, b, c, d] = out.anchors;
+    const u = [b.x - a.x, b.y - a.y, b.z - a.z], v = [c.x - a.x, c.y - a.y, c.z - a.z], w = [d.x - a.x, d.y - a.y, d.z - a.z];
+    const vol3 = u[0] * (v[1] * w[2] - v[2] * w[1]) - u[1] * (v[0] * w[2] - v[2] * w[0]) + u[2] * (v[0] * w[1] - v[1] * w[0]);
+    if (Math.abs(vol3) < 0.05) add("info", "Pierwsze 4 kotwice są (prawie) współpłaszczyznowe – rozwiązanie 3D jest niejednoznaczne, polegamy na bryle klatki");
+  }
+  if (out.anchors.length === 3) add("info", "3 kotwice: rozwiązanie lustrzane jest odrzucane na podstawie bryły klatki");
+  return { model: out, issues };
+}
+
+// ---------- tabele ----------
+function renderTable(host, key) {
+  host.innerHTML = "";
+  const cols = COLS[key];
+  const table = el("table");
+  table.append(el("tr", {}, el("th", { textContent: "Nr" }), ...cols.map(c => el("th", { textContent: c.label })), el("th")));
+  state[key].forEach((row, i) => {
+    const tr = el("tr");
+    tr.append(el("td", { class: "ctl", style: "font-weight:600;padding-top:6px", textContent: ROW_PREFIX[key] + (i + 1) }));
+    cols.forEach(c => {
+      const td = el("td");
+      const inp = el("input", { type: "text", value: row[c.key] ?? "", placeholder: c.ph || "",
+        "aria-label": `${c.label} wiersz ${i + 1}` });
+      if (c.num) inp.setAttribute("inputmode", "decimal");
+      const info = el("span", { class: "info" });
+      if (c.num) updateInfo(inp.value, info);
+      inp.addEventListener("input", () => { row[c.key] = inp.value; if (c.num) updateInfo(inp.value, info); changed(); });
+      td.append(inp);
+      if (c.num) td.append(info);
+      tr.append(td);
+    });
+    const ctl = el("td", { class: "ctl" });
+    if (key === "polygon") {
+      ctl.append(
+        el("button", { class: "small", title: "W górę", textContent: "↑" }),
+        el("button", { class: "small", title: "W dół", textContent: "↓" })
+      );
+      ctl.children[0].onclick = () => { if (i > 0) { swap(key, i, i - 1); renderTable(host, key); changed(); } };
+      ctl.children[1].onclick = () => { if (i < state[key].length - 1) { swap(key, i, i + 1); renderTable(host, key); changed(); } };
+    }
+    const del = el("button", { class: "small", title: "Usuń wiersz", textContent: "✕" });
+    del.onclick = () => { state[key].splice(i, 1); renderTable(host, key); changed(); };
+    ctl.append(del);
+    tr.append(ctl);
+    table.append(tr);
+  });
+  host.append(el("div", { class: "tablewrap" }, table));
+}
+function swap(key, i, j) { [state[key][i], state[key][j]] = [state[key][j], state[key][i]]; }
+
+const hosts = {
+  polygon: document.getElementById("tblPolygon"), levels: document.getElementById("tblLevels"),
+  anchors: document.getElementById("tblAnchors"), refs: document.getElementById("tblRefs")
+};
+function renderAll() {
+  document.getElementById("unit").value = state.unit;
+  document.getElementById("name").value = state.name;
+  document.getElementById("origin").value = state.origin;
+  document.getElementById("zMin").value = state.zMin;
+  document.getElementById("zMax").value = state.zMax;
+  updateInfo(state.zMin, document.getElementById("zMinInfo"));
+  updateInfo(state.zMax, document.getElementById("zMaxInfo"));
+  for (const k of Object.keys(hosts)) renderTable(hosts[k], k);
+  renderThumbs();
+  changed();
+}
+
+// ---------- rysowanie ----------
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function setupCanvas(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = Math.max(1, Math.round(w * dpr));
+  canvas.height = Math.max(1, Math.round(h * dpr));
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  ctx.font = "12px system-ui, sans-serif";
+  return { ctx, w, h };
+}
+function niceStep(range) {
+  const raw = range / 6, p = Math.pow(10, Math.floor(Math.log10(raw || 1)));
+  const m = raw / p;
+  return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * p;
+}
+function makeView(w, h, minX, maxX, minY, maxY, pad) {
+  const rx = Math.max(maxX - minX, 0.5), ry = Math.max(maxY - minY, 0.5);
+  const s = Math.min((w - 2 * pad) / rx, (h - 2 * pad) / ry);
+  const ox = (w - rx * s) / 2, oy = (h - ry * s) / 2;
+  return { s, X: x => ox + (x - minX) * s, Y: y => h - oy - (y - minY) * s };
+}
+function drawGrid(ctx, w, h, view, minX, maxX, minY, maxY) {
+  const step = niceStep(Math.max(maxX - minX, maxY - minY));
+  ctx.strokeStyle = css("--line"); ctx.fillStyle = css("--muted"); ctx.lineWidth = 1;
+  for (let x = Math.ceil(minX / step) * step; x <= maxX; x += step) {
+    ctx.beginPath(); ctx.moveTo(view.X(x), 0); ctx.lineTo(view.X(x), h); ctx.stroke();
+    ctx.fillText(fmt(x), view.X(x) + 2, h - 3);
+  }
+  for (let y = Math.ceil(minY / step) * step; y <= maxY; y += step) {
+    ctx.beginPath(); ctx.moveTo(0, view.Y(y)); ctx.lineTo(w, view.Y(y)); ctx.stroke();
+    ctx.fillText(fmt(y), 3, view.Y(y) - 2);
+  }
+}
+function triangle(ctx, x, y, r) { ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r, y + r * 0.8); ctx.lineTo(x - r, y + r * 0.8); ctx.closePath(); }
+
+// Opis przy kotwicy / punkcie referencyjnym: z włączonym przełącznikiem pełne współrzędne (x; y; z), inaczej tylko Z
+const showCoords = () => document.getElementById("showCoords").checked;
+const vis = id => document.getElementById(id).checked; // przełączniki widoczności grup na podglądach
+function coordTxt(p) {
+  return showCoords() ? ` (${fmt(p.x)}; ${fmt(p.y)}; ${fmt(p.z)})` : ` z=${fmt(p.z)}`;
+}
+const anchorLabel = a => `K${a._n} ${a.id}`;
+
+function drawPlan(m) {
+  const { ctx, w, h } = setupCanvas(document.getElementById("plan"));
+  const pts = [...m.volume.polygon, ...m.anchors, ...m.referencePoints, { x: 0, y: 0 }];
+  if (pts.length <= 1) { ctx.fillStyle = css("--muted"); ctx.fillText("Wpisz wymiary – podgląd pojawi się tutaj", 12, 22); return; }
+  const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+  const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const v = makeView(w, h, minX, maxX, minY, maxY, 26);
+  drawGrid(ctx, w, h, v, minX, maxX, minY, maxY);
+  const poly = m.volume.polygon;
+  if (poly.length >= 2) {
+    ctx.beginPath(); poly.forEach((p, i) => (i ? ctx.lineTo(v.X(p.x), v.Y(p.y)) : ctx.moveTo(v.X(p.x), v.Y(p.y))));
+    if (poly.length >= 3) { ctx.closePath(); ctx.fillStyle = css("--fill"); ctx.fill(); }
+    ctx.strokeStyle = css("--accent"); ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = css("--accent");
+    if (vis("showVerts")) poly.forEach((p, i) => { ctx.beginPath(); ctx.arc(v.X(p.x), v.Y(p.y), 3, 0, 7); ctx.fill(); ctx.fillText("W" + p._n, v.X(p.x) + 5, v.Y(p.y) - 5); });
+  }
+  // osie w punkcie bazowym
+  ctx.strokeStyle = css("--text"); ctx.fillStyle = css("--text"); ctx.lineWidth = 1.5;
+  const ox = v.X(0), oy = v.Y(0);
+  ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox + 28, oy); ctx.moveTo(ox, oy); ctx.lineTo(ox, oy - 28); ctx.stroke();
+  ctx.fillText("X", ox + 31, oy + 4); ctx.fillText("Y", ox - 3, oy - 32);
+  // kotwice i punkty
+  if (vis("showAnchors")) m.anchors.forEach(a => { ctx.fillStyle = css("--accent2"); triangle(ctx, v.X(a.x), v.Y(a.y), 6); ctx.fill(); ctx.fillText(anchorLabel(a) + coordTxt(a, true), v.X(a.x) + 8, v.Y(a.y) + 4); });
+  if (vis("showRefs")) m.referencePoints.forEach(p => { ctx.fillStyle = css("--ok"); ctx.beginPath(); ctx.arc(v.X(p.x), v.Y(p.y), 4, 0, 7); ctx.fill(); ctx.fillText(p.name + coordTxt(p, true), v.X(p.x) + 7, v.Y(p.y) + 4); });
+}
+// Widok boczny: hk = "x" (rzut X–Z) albo "y" (rzut Y–Z); oś pionowa to zawsze Z
+function drawSide(m, canvasId, hk) {
+  const { ctx, w, h } = setupCanvas(document.getElementById(canvasId));
+  const vol = m.volume, px = vol.polygon.map(p => p[hk]);
+  const xs = [...px, ...m.anchors.map(a => a[hk]), ...m.referencePoints.map(p => p[hk])];
+  const zs = [...m.levels.map(l => l.z), ...m.anchors.map(a => a.z), ...m.referencePoints.map(p => p.z), ...vol.polygon.map(p => p.z)];
+  if (vol.zMin != null) zs.push(vol.zMin); if (vol.zMax != null) zs.push(vol.zMax);
+  if (!xs.length || !zs.length) { ctx.fillStyle = css("--muted"); ctx.fillText("Wpisz Z i współrzędne – podgląd pojawi się tutaj", 12, 22); return; }
+  const [minX, maxX, minZ, maxZ] = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)];
+  const v = makeView(w, h, minX, maxX, minZ, maxZ, 24);
+  drawGrid(ctx, w, h, v, minX, maxX, minZ, maxZ);
+  ctx.fillStyle = css("--text");
+  ctx.fillText(hk.toUpperCase() + " →", w - 34, h - 14); ctx.fillText("Z ↑", 6, 14);
+  if (px.length && vol.zMin != null && vol.zMax != null) {
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = css("--accent"); ctx.lineWidth = 1.5;
+    ctx.strokeRect(v.X(Math.min(...px)), v.Y(vol.zMax), (Math.max(...px) - Math.min(...px)) * v.s, (vol.zMax - vol.zMin) * v.s);
+    ctx.setLineDash([]);
+  }
+  // obrys klatki w rzucie bocznym: każdy wierzchołek na swojej wysokości Z
+  const poly = vol.polygon;
+  if (poly.length && vis("showVerts")) {
+    ctx.strokeStyle = css("--accent"); ctx.fillStyle = css("--accent"); ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    poly.forEach((p, i) => (i ? ctx.lineTo(v.X(p[hk]), v.Y(p.z)) : ctx.moveTo(v.X(p[hk]), v.Y(p.z))));
+    if (poly.length >= 3) ctx.closePath();
+    ctx.stroke();
+    poly.forEach(p => { ctx.beginPath(); ctx.arc(v.X(p[hk]), v.Y(p.z), 3, 0, 7); ctx.fill(); ctx.fillText("W" + p._n, v.X(p[hk]) + 4, v.Y(p.z) - 4); });
+  }
+  if (vis("showLevels")) m.levels.forEach(l => { ctx.strokeStyle = css("--muted"); ctx.fillStyle = css("--muted"); ctx.beginPath(); ctx.moveTo(0, v.Y(l.z)); ctx.lineTo(w, v.Y(l.z)); ctx.stroke(); ctx.fillText(`${l.name} (${l.z})`, w - 130, v.Y(l.z) - 3); });
+  if (vis("showAnchors")) m.anchors.forEach(a => { ctx.fillStyle = css("--accent2"); triangle(ctx, v.X(a[hk]), v.Y(a.z), 6); ctx.fill(); ctx.fillText(anchorLabel(a) + coordTxt(a, true), v.X(a[hk]) + 8, v.Y(a.z) + 4); });
+  if (vis("showRefs")) m.referencePoints.forEach(p => { ctx.fillStyle = css("--ok"); ctx.beginPath(); ctx.arc(v.X(p[hk]), v.Y(p.z), 4, 0, 7); ctx.fill(); ctx.fillText(p.name + coordTxt(p, true), v.X(p[hk]) + 7, v.Y(p.z) + 4); });
+}
+function renderIssues(issues) {
+  const ul = document.getElementById("issues");
+  ul.innerHTML = "";
+  if (!issues.some(i => i.lvl !== "info")) ul.append(el("li", { class: "ok", textContent: "✔ Brak błędów i ostrzeżeń" }));
+  const icon = { error: "✖ ", warn: "⚠ ", info: "ℹ " };
+  issues.forEach(i => ul.append(el("li", { class: i.lvl, textContent: icon[i.lvl] + i.msg })));
+}
+
+// ---------- zmiany, zapis ----------
+let saveTimer = null;
+function changed() {
+  const { model, issues } = resolve();
+  drawPlan(model); drawSide(model, "side", "x"); drawSide(model, "sideYZ", "y"); renderIssues(issues);
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* tryb prywatny itp. */ } }, 300);
+}
+function bind(id, key, infoId) {
+  const inp = document.getElementById(id);
+  inp.addEventListener("input", () => { state[key] = inp.value; if (infoId) updateInfo(inp.value, document.getElementById(infoId)); changed(); });
+}
+bind("name", "name"); bind("origin", "origin"); bind("zMin", "zMin", "zMinInfo"); bind("zMax", "zMax", "zMaxInfo");
+["showVerts", "showLevels", "showAnchors", "showRefs", "showCoords"]
+  .forEach(id => document.getElementById(id).addEventListener("change", changed));
+document.getElementById("unit").addEventListener("change", e => { state.unit = e.target.value; changed(); });
+document.getElementById("addPoly").onclick = () => { state.polygon.push(BLANK.polygon()); renderTable(hosts.polygon, "polygon"); changed(); };
+document.getElementById("revPoly").onclick = () => { state.polygon.reverse(); renderTable(hosts.polygon, "polygon"); changed(); };
+document.getElementById("addLevel").onclick = () => { state.levels.push(BLANK.levels()); renderTable(hosts.levels, "levels"); changed(); };
+document.getElementById("addAnchor").onclick = () => { state.anchors.push(BLANK.anchors()); renderTable(hosts.anchors, "anchors"); changed(); };
+document.getElementById("addRef").onclick = () => { state.refs.push(BLANK.refs()); renderTable(hosts.refs, "refs"); changed(); };
+window.addEventListener("resize", changed);
+if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { changed(); drawPhoto(); });
+
+// ---------- eksport / import ----------
+function buildExport() {
+  const { model, issues } = resolve();
+  // klucze zaczynające się od "_" (numery wierszy) służą tylko do podglądu i nie trafiają do pliku
+  return { issues, json: JSON.stringify({ ...model, editorState: state }, (k, v) => (k.startsWith("_") ? undefined : v), 2) };
+}
+function confirmIfErrors(issues) {
+  const errs = issues.filter(i => i.lvl === "error");
+  return !errs.length || confirm(`W danych są błędy (${errs.length}):\n- ${errs.map(e => e.msg).join("\n- ")}\n\nEksportować mimo to?`);
+}
+document.getElementById("btnDownload").onclick = () => {
+  const { issues, json } = buildExport();
+  if (!confirmIfErrors(issues)) return;
+  const a = el("a", { href: URL.createObjectURL(new Blob([json], { type: "application/json" })), download: "stairwell_config.json" });
+  document.body.append(a); a.click(); a.remove();
+};
+document.getElementById("btnCopy").onclick = async () => {
+  const { issues, json } = buildExport();
+  if (!confirmIfErrors(issues)) return;
+  try { await navigator.clipboard.writeText(json); alert("Skopiowano JSON do schowka."); }
+  catch (e) { const t = el("textarea", { value: json }); document.body.append(t); t.select(); document.execCommand("copy"); t.remove(); alert("Skopiowano JSON do schowka."); }
+};
+// Zgodność wsteczna: pliki sprzed dodania Z wierzchołków nie mają tego pola - przyjmujemy 0
+function normalizeState() {
+  state.polygon.forEach(r => { if (r.z === undefined || r.z === null) r.z = "0"; });
+}
+function loadFromObject(o) {
+  if (o && o.editorState) {
+    state = Object.assign(defaultState(), o.editorState);
+  } else {
+    const s = defaultState(); s.unit = "m";
+    s.name = o.name || ""; s.origin = o.origin || "";
+    const vol = o.volume || {};
+    s.zMin = vol.zMin != null ? String(vol.zMin) : ""; s.zMax = vol.zMax != null ? String(vol.zMax) : "";
+    s.polygon = (vol.polygon || []).map(p => ({ x: String(p.x), y: String(p.y), z: p.z != null ? String(p.z) : "0" }));
+    s.levels = (o.levels || []).map(l => ({ name: l.name || "", z: String(l.z) }));
+    s.anchors = (o.anchors || []).map(a => ({ id: a.id || "", x: String(a.x), y: String(a.y), z: String(a.z), sigma: a.sigma != null ? String(a.sigma) : "", note: a.note || "" }));
+    s.refs = (o.referencePoints || []).map(r => ({ name: r.name || "", x: String(r.x), y: String(r.y), z: String(r.z), note: r.note || "" }));
+    state = s;
+  }
+  for (const k of ["polygon", "levels", "anchors", "refs"]) if (!state[k].length) state[k].push(BLANK[k]());
+  if (!Array.isArray(state.photoMarkers)) state.photoMarkers = [];
+  normalizeState();
+  renderAll();
+}
+function loadFromText(text) {
+  try { loadFromObject(JSON.parse(text)); } catch (e) { alert("Nie udało się wczytać JSON: " + e.message); }
+}
+document.getElementById("btnImport").onclick = () => document.getElementById("fileImport").click();
+document.getElementById("fileImport").onchange = async e => { const f = e.target.files[0]; if (f) loadFromText(await f.text()); e.target.value = ""; };
+document.getElementById("btnPaste").onclick = () => loadFromText(document.getElementById("pasteJson").value);
+document.getElementById("btnClear").onclick = () => { if (confirm("Wyczyścić wszystkie wpisy?")) { state = defaultState(); renderAll(); } };
+
+// ---------- zdjęcia ----------
+const photos = [];
+let activePhoto = -1;
+let drawRect = null;
+document.getElementById("filePhotos").onchange = e => {
+  for (const file of e.target.files) {
+    const img = new Image();
+    const entry = { name: file.name, img };
+    img.onload = () => { photos.push(entry); if (activePhoto < 0) activePhoto = 0; renderThumbs(); drawPhoto(); };
+    img.src = URL.createObjectURL(file);
+  }
+  e.target.value = "";
+};
+function renderThumbs() {
+  const host = document.getElementById("thumbs");
+  host.innerHTML = "";
+  photos.forEach((p, i) => {
+    const b = el("button", { class: i === activePhoto ? "active" : "", textContent: p.name });
+    b.onclick = () => { activePhoto = i; renderThumbs(); drawPhoto(); };
+    host.append(b);
+  });
+  renderMarkerList();
+}
+function currentMarkers() {
+  const p = photos[activePhoto];
+  return p ? state.photoMarkers.map((m, idx) => ({ m, idx })).filter(o => o.m.photo === p.name) : [];
+}
+function renderMarkerList() {
+  const ul = document.getElementById("markerList");
+  ul.innerHTML = "";
+  currentMarkers().forEach(({ m, idx }) => {
+    const del = el("button", { class: "small", textContent: "✕", title: "Usuń znacznik" });
+    del.onclick = () => { state.photoMarkers.splice(idx, 1); renderMarkerList(); drawPhoto(); changed(); };
+    ul.append(el("li", {}, del, " " + m.label));
+  });
+}
+function drawPhoto() {
+  const canvas = document.getElementById("photo");
+  const { ctx, w, h } = setupCanvas(canvas);
+  const p = photos[activePhoto];
+  drawRect = null;
+  if (!p) { ctx.fillStyle = css("--muted"); ctx.fillText("Wczytaj zdjęcie, aby dodawać znaczniki", 12, 22); return; }
+  const s = Math.min(w / p.img.naturalWidth, h / p.img.naturalHeight);
+  const rw = p.img.naturalWidth * s, rh = p.img.naturalHeight * s, rx = (w - rw) / 2, ry = (h - rh) / 2;
+  drawRect = { rx, ry, rw, rh };
+  ctx.drawImage(p.img, rx, ry, rw, rh);
+  currentMarkers().forEach(({ m }) => {
+    const x = rx + m.u * rw, y = ry + m.v * rh;
+    ctx.fillStyle = css("--accent2"); ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.font = "bold 13px system-ui, sans-serif"; ctx.lineWidth = 3; ctx.strokeStyle = "#000"; ctx.fillStyle = "#fff";
+    ctx.strokeText(m.label, x + 9, y + 4); ctx.fillText(m.label, x + 9, y + 4);
+  });
+}
+document.getElementById("photo").addEventListener("click", e => {
+  if (!drawRect || !photos[activePhoto]) return;
+  const r = e.currentTarget.getBoundingClientRect();
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  const { rx, ry, rw, rh } = drawRect;
+  if (x < rx || x > rx + rw || y < ry || y > ry + rh) return;
+  const label = prompt("Nazwa znacznika (np. K1, P3, naroże szybu):");
+  if (!label || !label.trim()) return;
+  state.photoMarkers.push({ photo: photos[activePhoto].name, u: (x - rx) / rw, v: (y - ry) / rh, label: label.trim() });
+  renderMarkerList(); drawPhoto(); changed();
+});
+window.addEventListener("resize", drawPhoto);
+
+// ---------- start ----------
+try {
+  const saved = localStorage.getItem(STORE_KEY);
+  if (saved) state = Object.assign(defaultState(), JSON.parse(saved));
+} catch (e) { /* brak localStorage - zaczynamy od pustego stanu */ }
+normalizeState();
+renderAll();
+drawPhoto();
+</script>
+</body>
+</html>

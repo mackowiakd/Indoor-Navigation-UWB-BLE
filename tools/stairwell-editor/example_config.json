@@ -1,0 +1,32 @@
+{
+  "name": "PRZYKLAD - zastap wlasnymi pomiarami klatki",
+  "origin": "Punkt bazowy (0,0,0): <opisz gdzie>. Os X: <kierunek>, os Y: <kierunek>, Z w gore.",
+  "volume": {
+    "polygon": [
+      { "x": 0.0, "y": 0.0 },
+      { "x": 6.0, "y": 0.0 },
+      { "x": 6.0, "y": 2.0 },
+      { "x": 2.0, "y": 2.0 },
+      { "x": 2.0, "y": 4.0 },
+      { "x": 6.0, "y": 4.0 },
+      { "x": 6.0, "y": 6.0 },
+      { "x": 0.0, "y": 6.0 }
+    ],
+    "zMin": 0.0,
+    "zMax": 4.0
+  },
+  "levels": [
+    { "name": "Pietro dolne", "z": 0.0 },
+    { "name": "Podest", "z": 1.9 },
+    { "name": "Pietro gorne", "z": 3.8 }
+  ],
+  "anchors": [
+    { "id": "0x0001", "x": 0.3, "y": 0.3, "z": 0.3, "sigma": 0.03, "note": "WARTOSC PRZYKLADOWA" },
+    { "id": "0x0002", "x": 5.7, "y": 1.0, "z": 3.5, "sigma": 0.03, "note": "WARTOSC PRZYKLADOWA" },
+    { "id": "0x0003", "x": 0.5, "y": 5.5, "z": 3.0, "sigma": 0.03, "note": "WARTOSC PRZYKLADOWA" },
+    { "id": "0x0004", "x": 5.5, "y": 5.5, "z": 0.5, "sigma": 0.03, "note": "WARTOSC PRZYKLADOWA" }
+  ],
+  "referencePoints": [
+    { "name": "P1", "x": 1.0, "y": 3.0, "z": 2.0, "note": "WARTOSC PRZYKLADOWA" }
+  ]
+}

@@ -32,6 +32,8 @@ class NavigationRoutingEngine(
     //--zmienne stanu (przsylanie listy urzadzen do espa) --
     var currentLocationId: Int? = null // Gdzie aktualnie jestem? (do Cold Startu)
     var onPositionUpdated: ((Double, Double) -> Unit)? = null
+    // false = pozycję liczy zewnętrzna sesja 3D (StairwellSession), więc pomijamy trilaterację 2D poniżej
+    var use2dPositioning: Boolean = true
     private var lastTransitionTime: Long = 0  // Kiedy ostatnio zmieniliśmy strefę?
 
     // Ustawienia systemu
@@ -241,7 +243,7 @@ class NavigationRoutingEngine(
             }
         }
         //pozycjonowanie
-        if (detectedDevice.deviceType == "UWB_ANCHOR") {
+        if (use2dPositioning && detectedDevice.deviceType == "UWB_ANCHOR") {
             // Aktualizujemy ostatnią znaną odległość od tej kotwicy
             latestAnchorDistances[detectedDevice] = distanceOrRssi
              // Szukamy, ile z naszych "usłyszanych" kotwic ma fizyczne współrzędne w bazie
