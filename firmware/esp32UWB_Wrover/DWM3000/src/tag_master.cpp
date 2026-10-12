@@ -194,7 +194,7 @@ void TaskScan(void *pvParameters) {
 // 5. UNIWERSALNA FUNKCJA UWB (TWR - Two Way Ranging)
 // =========================================================================
 
-float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibrationMode) {
+float executeTWR(uint8_t target_anchor, uint8_t source_anchor) {
 
     float received_distance = -1.0; // Domyślnie ustawiamy na -1.0, co oznacza błąd (timeout lub brak odpowiedzi)
     uint32_t status_reg = 0;
@@ -204,7 +204,6 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibratio
     tx_poll_msg[SENDER_IDX] = TAG_ID; // SenderID
     tx_final_msg[DEST_IDX]  = target_anchor; // Do kogo wysyłam FINAL (Kotwica)
     tx_final_msg[SENDER_IDX] = TAG_ID; // kto wysyla
-
 
     // KROK 1: Wysyłamy wiadomość POLL
     tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
@@ -222,7 +221,7 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor, bool isCalibratio
 
     // Czekamy na odpowiedź RESP  => change for whiile(true) as anchors may not catch up with tag working in RTOS 
     while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
-    taskYIELD();  
+    //taskYIELD();  // <=> if we assign new task for core1-uwb
     }
     // 2. Coś przyleciało do anteny! -> zmiana na TAG initialized TWR czyli my pytamy 
     //po ID z naszej listy urządzeń docelowych (np. POLL do 0x0001)
@@ -384,7 +383,7 @@ float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
             dwt_rxenable(DWT_START_RX_IMMEDIATE);
             software_timeout_start = millis(); // restet timer
         }
-        taskYIELD();
+        //taskYIELD(); <=> if we assign new task for core1-uwb
     }
 
     // Sprzątanie rejestru przed wyjściem (niezależnie czy błąd czy dziwna ramka)
@@ -461,7 +460,7 @@ void runNavigationMode() {
         if (target_id == 0) continue;
         
         // CZYSTY STRZAŁ (false = to nie jest kalibracja)
-        float dist = executeTWR(target_id, target_id, false); 
+        float dist = executeTWR(target_id, target_id); 
         
         if (dist > 0.0 && dist < 100.0) {
             // Wygładzanie odczytów filtrem kinematycznym
@@ -477,7 +476,7 @@ void runNavigationMode() {
             }
         }
         
-        // MAŁY ODDECH DLA PROCESORA PO KAŻDYM STRZALE! (Eliminuje dławienie BLE)
+        // MAŁY ODDECH DLA PROCESORA (otherwise may tigger watchdog)
         vTaskDelay(pdMS_TO_TICKS(60)); 
     }
 }
@@ -567,11 +566,11 @@ void setup() {
     pBLEScan->setInterval(100);
     pBLEScan->setWindow(70);
     
-  // --- ZMIANA: Przypisujemy taski BLE sztywno do rdzenia 0 (PRO_CPU) ---
+  // ---  Przypisujemy taski BLE sztywno do rdzenia 0 (PRO_CPU) ---
     xTaskCreatePinnedToCore(TaskNotify, "Notify_Task", 4096, NULL, 1, &TaskNotifyHandle, 0);
     xTaskCreatePinnedToCore(TaskScan,   "Scan_Task",   4096, NULL, 1, &TaskScanHandle, 0);
     
-    // --- NOWE: Tworzymy task UWB i przypisujemy sztywno do rdzenia 1 (APP_CPU) ---
+    // ---  Tworzymy task UWB i przypisujemy sztywno do rdzenia 1 (APP_CPU) ---
     xTaskCreatePinnedToCore(TaskUWB, "UWB_Task", 8192, NULL, 2, &TaskUwbHandle, 1);
 
 
