@@ -137,11 +137,10 @@ class AutoCalibrationEngine {
 
     // Funkcja pomocnicza zamieniająca "1", "0x1" lub "0x0001" na jednolity format "0x0001"
     private fun formatAnchorId(rawId: String): String {
-        // 1. Usuwamy "0x" (jeśli ESP32 je przysłało) żeby móc bezpiecznie zrzutować na liczbę
-        val cleanId = rawId.removePrefix("0x").trim()
+
 
         // 2. Próbujemy zamienić tekst na liczbę (w systemie szesnastkowym - 16)
-        val numericId = cleanId.toIntOrNull(16)
+        val numericId = rawId.toIntOrNull(10)
 
         // 3. Twój bezpieczny blok if-else!
         return if (numericId != null) {
@@ -180,6 +179,7 @@ class AutoCalibrationEngine {
                         distanceMatrix[index1][index2] = dist
                         distanceMatrix[index2][index1] = dist // Odbicie lustrzane dla macierzy
                     }
+
                 }
             }
         }
