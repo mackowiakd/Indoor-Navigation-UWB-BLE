@@ -317,7 +317,14 @@ class NavigationRoutingEngine(
                         speechService.announceImportant("Jesteś w strefie: ${dest.name}. Wybierz teraz dokładny cel z listy.")
                     } else {
                         // Jeśli w przyszłości podepniesz pod UWB cel mikro (np. konkretne biurko z kotwicą):
-                        speechService.announceImportant("Dotarłeś do celu.  ${dest.name} jest po $relPos.side stronie.")
+                        if (relPos.isDeadZone){
+                            if(relPos.forwardDistance>0)
+                                speechService.announceBackground(" ${dest.name} na przeciwko Ciebie za $distanceInt ${getMeterSpelling(distanceInt)}")
+
+                        }
+                        else{
+                            speechService.announceImportant("Dotarłeś do celu.  ${dest.name} jest po $relPos.side stronie.")
+                        }
                     }
 
                     //currentTarget = null //  logika powtarzania wtdty mija sie z zalozeniem
@@ -329,7 +336,15 @@ class NavigationRoutingEngine(
             if (distance > 1.5) {
                 if (distanceInt <= 10) {
                     if (distanceInt != lastAnnouncedDistanceInt) {
-                        speechService.announceBackground("$distanceInt ${getMeterSpelling(distanceInt)} do ${dest.name} po stronie $relPos.side")
+                        if (relPos.isDeadZone){
+                            if(relPos.forwardDistance>0)
+                                speechService.announceBackground(" ${dest.name} na przeciwko Ciebie za $distanceInt ${getMeterSpelling(distanceInt)}")
+
+                        }
+                            // Przerywamy dalszą analizę (lewo/prawo) dla tego obiektu, bo już o nim powiedzieliśmy
+                        else{
+                             speechService.announceBackground("$distanceInt ${getMeterSpelling(distanceInt)} do ${dest.name} po stronie $relPos.side")
+                        }
                         lastAnnouncedDistanceInt = distanceInt
                     }
                 } else {
