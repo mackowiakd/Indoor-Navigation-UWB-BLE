@@ -89,8 +89,11 @@ static uint8_t frame_seq_nb = 0;
 extern dwt_txconfig_t txconfig_options;
 
 // ANCHOR CONFIG
+// ANCHOR CONFIG
 
-#define ANCHOR_NUM 1  // ID tej konkretnej kotwicy - DO ZMIANY JESLI WGRYWAMY NA WIECEJ NIZ JEDNA
+#ifndef ANCHOR_NUM
+  #define ANCHOR_NUM 1  // Użyte tylko wtedy, gdy platformio.ini NIE wstrzyknie własnej wartości
+#endif
 
 #define RX_BUF_LEN 24
 #define POLL_RX_TO_RESP_TX_DLY_UUS 8000
