@@ -186,8 +186,17 @@ class MainActivity : ComponentActivity() {
                             startBleServices()
                             debugLogs.add(0, "🔄 Inicjalizacja połączenia z ESP32...")
                         },
-                        onDisconnect = { // <--- NOWA AKCJA
-                        bleManager.disconnect()
+                        onDisconnect = {
+
+                        bleManager.disconnect() // 1. Zatrzymanie sprzętowe
+
+                        routingEngine.clearCurrentTarget()  // 2. Czyszczenie silnika nawigacji (Zatrzymanie Watchdoga i wyzerowanie celu)
+                        // 3. Resetowanie interfejsu
+                        currentTargetNameState.value = "Brak celu (Wybierz coś z listy)"
+                        currentLocationIdState.value = null
+                        userPositionState.value = null
+                        // Opcjonalne wyczyszczenie filtru
+                        bleManager.sendFilterToEsp(emptyList())
                         debugLogs.add(0, "🛑 Wymuszono rozłączenie (Manual)")
                          },
                         onTestApiClick = {
