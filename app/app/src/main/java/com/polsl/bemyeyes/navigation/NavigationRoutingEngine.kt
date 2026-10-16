@@ -326,30 +326,32 @@ class NavigationRoutingEngine(
                             speechService.announceImportant("Dotarłeś do celu.  ${dest.name} jest po $relPos.side stronie.")
                         }
                     }
-
                     //currentTarget = null //  logika powtarzania wtdty mija sie z zalozeniem
                     return
                 }
             }
 
-            // Scenariusz: Zbliżanie się// czyli to zostawiamy bez podzialu na device type?
+            // Scenariusz: Zbliżanie się  zostawiamy bez podzialu na device type -bo kotwice tez moga byc micro
             if (distance > 1.5) {
-                if (distanceInt <= 10) {
-                    if (distanceInt != lastAnnouncedDistanceInt) {
-                        if (relPos.isDeadZone){
-                            if(relPos.forwardDistance>0)
-                                speechService.announceBackground(" ${dest.name} na przeciwko Ciebie za $distanceInt ${getMeterSpelling(distanceInt)}")
+                //wspolny czas (cooldown) od ostatniego komunikatu
+                if (currentTime - lastProximityAnnouncementTimeMs > TARGET_ZONE_COOLDOWN_MS) {
 
-                        }
-                            // Przerywamy dalszą analizę (lewo/prawo) dla tego obiektu, bo już o nim powiedzieliśmy
-                        else{
-                             speechService.announceBackground("$distanceInt ${getMeterSpelling(distanceInt)} do ${dest.name} po stronie $relPos.side")
-                        }
-                        lastAnnouncedDistanceInt = distanceInt
-                    }
-                } else {
-                    if (currentTime - lastProximityAnnouncementTimeMs > TARGET_ZONE_COOLDOWN_MS) {
+                    if (distanceInt <= 10) {
+                        if (distanceInt != lastAnnouncedDistanceInt ) {
+                            if (relPos.isDeadZone){
+                                if(relPos.forwardDistance>0)
+                                    speechService.announceBackground(" ${dest.name} na przeciwko Ciebie za $distanceInt ${getMeterSpelling(distanceInt)}")
 
+                            }
+                                // Przerywamy dalszą analizę (lewo/prawo) dla tego obiektu, bo już o nim powiedzieliśmy
+                            else{
+                                 speechService.announceBackground("$distanceInt ${getMeterSpelling(distanceInt)} do ${dest.name} po stronie $relPos.side")
+                            }
+                            lastAnnouncedDistanceInt = distanceInt
+                            lastProximityAnnouncementTimeMs = currentTime
+                        }
+                    } else {
+                        // Jesteśmy daleko (>10m): Zaokrąglamy do 5 metrów
 
                         val roundedTo5 = (distanceInt / 5) * 5
                         if (roundedTo5 != lastAnnouncedDistanceInt && distanceInt % 5 == 0) {
