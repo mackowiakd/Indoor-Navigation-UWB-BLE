@@ -147,7 +147,7 @@ class NavigationRoutingEngine(
                     continue
                 }
 
-                speechService.announceBackground("Mijasz ${target.name} po Twojej $relPos.side stronie.")
+                speechService.announceBackground("Mijasz ${target.name} po Twojej ${relPos.side} stronie.")
                 announcedPoisInStep.add(target.associatedMac ?: "")
             } else {
                 // Gdy użytkownik oddali się od obiektu, usuwamy go z listy ogłoszonych,
@@ -319,11 +319,11 @@ class NavigationRoutingEngine(
                         // Jeśli w przyszłości podepniesz pod UWB cel mikro (np. konkretne biurko z kotwicą):
                         if (relPos.isDeadZone){
                             if(relPos.forwardDistance>0)
-                                speechService.announceBackground(" ${dest.name} na przeciwko Ciebie za $distanceInt ${getMeterSpelling(distanceInt)}")
+                                speechService.announceBackground(" ${dest.name} na przeciwko Ciebie za ${distanceInt} ${getMeterSpelling(distanceInt)}")
 
                         }
                         else{
-                            speechService.announceImportant("Dotarłeś do celu.  ${dest.name} jest po $relPos.side stronie.")
+                            speechService.announceImportant("Dotarłeś do celu.  ${dest.name} jest po ${relPos.side} stronie.")
                         }
                     }
                     //currentTarget = null //  logika powtarzania wtdty mija sie z zalozeniem
@@ -345,7 +345,7 @@ class NavigationRoutingEngine(
                             }
                                 // Przerywamy dalszą analizę (lewo/prawo) dla tego obiektu, bo już o nim powiedzieliśmy
                             else{
-                                 speechService.announceBackground("$distanceInt ${getMeterSpelling(distanceInt)} do ${dest.name} po stronie $relPos.side")
+                                 speechService.announceBackground("$distanceInt ${getMeterSpelling(distanceInt)} do ${dest.name} po stronie ${relPos.side}")
                             }
                             lastAnnouncedDistanceInt = distanceInt
                             lastProximityAnnouncementTimeMs = currentTime

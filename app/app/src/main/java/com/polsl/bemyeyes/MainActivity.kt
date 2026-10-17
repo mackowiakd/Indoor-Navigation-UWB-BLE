@@ -189,8 +189,8 @@ class MainActivity : ComponentActivity() {
                         onDisconnect = {
 
                         bleManager.disconnect() // 1. Zatrzymanie sprzętowe
-
-                        routingEngine.clearCurrentTarget()  // 2. Czyszczenie silnika nawigacji (Zatrzymanie Watchdoga i wyzerowanie celu)
+                        routingEngine.currentLocationId = null
+                        routingEngine.clearCurrentTarget()  // 2. Czyszczenie silnika nawigacji (Zatrzymanie Watchdoga i wyzerowanie celu) // routingEngine.currentLocationId = null
                         // 3. Resetowanie interfejsu
                         currentTargetNameState.value = "Brak celu (Wybierz coś z listy)"
                         currentLocationIdState.value = null
