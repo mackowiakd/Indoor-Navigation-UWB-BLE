@@ -41,8 +41,9 @@ SystemMode currentMode = MODE_IDLE;
 // --- BLE CALLBACKS ---
 class MyServerCallbacks: public NimBLEServerCallbacks {
     void onConnect(NimBLEServer* pServer) { deviceConnected = true; Serial.println(">>> TELEFON POŁĄCZONY! <<<"); };
-    void onDisconnect(NimBLEServer* pServer) { deviceConnected = false; Serial.println(">>> TELEFON ODŁĄCZONY! <<<"); }
-};
+    void onDisconnect(NimBLEServer* pServer) { deviceConnected = false; Serial.println(">>> TELEFON ROZŁĄCZONY! <<<"); };
+ };
+ 
 
 //odbior komend z apki mobilnej (lista urządzeń, tryb pracy, itp) 
 class MyWriteCallbacks: public NimBLECharacteristicCallbacks {
@@ -189,6 +190,22 @@ void TaskScan(void *pvParameters) {
         }
     }
 }
+// =========================================================================
+//    UWB radio debug helper function
+static bool waitForStatus(uint32_t mask, uint32_t timeout_ms, uint32_t &status) {
+    uint32_t t0 = millis();
+    while (!((status = dwt_read32bitreg(SYS_STATUS_ID)) & mask)) {
+        if (millis() - t0 > timeout_ms) return false;
+        taskYIELD(); // to w koncu potrzebujemy?
+    }
+    return true;
+}
+
+static void uwbReset() {
+    dwt_forcetrxoff();
+    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR |
+                      SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_TXFRS_BIT_MASK);
+}
 
 // =========================================================================
 // 5. UNIWERSALNA FUNKCJA UWB (TWR - Two Way Ranging)
@@ -213,16 +230,30 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor) {
     dwt_writetxfctrl(sizeof(tx_poll_msg), 0, 1); 
 
     // KRYTYCZNA ZMIANA: Zabezpieczenie przed zawieszeniem!
-    // Ustawiamy, jak długo Kotwica ma czekać na Ponga (np. 3 milisekundy)
+    // Ustawiamy, jak długo Tag ma czekać na Ponga (np. 3 milisekundy)
     dwt_setrxaftertxdelay(POLL_TX_TO_RESP_RX_DLY_UUS);
     dwt_setrxtimeout(RESP_RX_TIMEOUT_UUS);
-    //sendig POLL and waiting for RESP
-    dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
+    
+    if (dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED) != DWT_SUCCESS) {
+    Serial.printf("[TAG] POLL starttx FAIL -> 0x%02X\n", target_anchor);
+    uwbReset();
+    return -1.0f;
+    }  
+      /*
+        //sendig POLL and waiting for RESP
+        dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
+        // Czekamy na odpowiedź RESP  => change for whiile(true) as anchors may not catch up with tag working in RTOS 
 
-    // Czekamy na odpowiedź RESP  => change for whiile(true) as anchors may not catch up with tag working in RTOS 
     while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
-    //taskYIELD();  // <=> if we assign new task for core1-uwb
+        //taskYIELD();  // <=> if we assign new task for core1-uwb
+        }
+    */
+    if (!waitForStatus(SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR, 50, status_reg)) {
+    Serial.println("[TAG] SW WATCHDOG: etap RESP");
+    uwbReset();
+    return -1.0f;
     }
+    
     // 2. Coś przyleciało do anteny! -> zmiana na TAG initialized TWR czyli my pytamy 
     //po ID z naszej listy urządzeń docelowych (np. POLL do 0x0001)
 
@@ -309,8 +340,9 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor) {
         Serial.println("[TAG][BŁĄD] TIMEOUT 1: Kotwica nie odpowiedziała na pierwszego POLLa!");
     };
 
-   // --- SPRZĄTANIE (Niezależnie czy sukces, czy błąd) ---
-    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK);
+    uwbReset(); // Resetujemy radar, żeby nie wisiał w dziwnym stanie
+//    // --- SPRZĄTANIE (Niezależnie czy sukces, czy błąd) ---
+//     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK);
     return received_distance; // Zwracamy zmierzoną odległość (lub -1.0 jeśli był błąd)
 }
 
@@ -326,14 +358,20 @@ float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
     tx_cal_msg[SENDER_IDX] = TAG_ID; //  Podpisujemy rozkaz własnym ID!
 
     tx_cal_msg[ALL_MSG_SN_IDX] = frame_seq_nb++;
-    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
+    //dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
+    uwbReset();
     dwt_writetxdata(sizeof(tx_cal_msg), tx_cal_msg, 0);
     dwt_writetxfctrl(sizeof(tx_cal_msg), 0, 1);
     
     dwt_setrxaftertxdelay(0); 
     dwt_setrxtimeout(0);  //polegamy tylko na licznku milis()    
     
-    dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
+    //dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
+    if (dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED) != DWT_SUCCESS) {
+    Serial.println("[TAG-CALIB] CAL starttx FAIL");
+    uwbReset();
+    return -1.0f;
+}
 
     uint32_t local_status_reg = 0;
     unsigned long software_timeout_start = millis();
@@ -362,7 +400,7 @@ float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
             if (rx_buffer[CMD_IDX] == 'C' && rx_buffer[CMD_IDX+1] == 'R' && rx_buffer[CMD_IDX+2] == 'S' && rx_buffer[DEST_IDX] == TAG_ID) {
                 
                 memcpy(&distance, &rx_buffer[CRS_MSG_DIST_IDX], sizeof(float)); //wyliczona przez Kotwicę odległość
-                dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK);
+                uwbReset();
                 crs_cmd=false; //turn off
                 return distance; // SUKCES!
             }
@@ -383,11 +421,11 @@ float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
             dwt_rxenable(DWT_START_RX_IMMEDIATE);
             software_timeout_start = millis(); // restet timer
         }
-        //taskYIELD(); <=> if we assign new task for core1-uwb
+        //taskYIELD(); //<=> if we assign new task for core1-uwb
     }
 
     // Sprzątanie rejestru przed wyjściem (niezależnie czy błąd czy dziwna ramka)
-    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK);
+    uwbReset();
     return  distance;
 }
 
@@ -458,7 +496,8 @@ void runNavigationMode() {
     for (int i = 0; i < anchorCount; i++) {
         uint8_t target_id = appData.getUwbAnchorId(i);
         if (target_id == 0) continue;
-        
+        Serial.printf("[UWB] -> 0x%04X (t=%lu)\n", target_id, millis());
+
         // CZYSTY STRZAŁ (false = to nie jest kalibracja)
         float dist = executeTWR(target_id, target_id); 
         

@@ -149,8 +149,8 @@ float executeTWR(uint8_t target_anchor) {
     if (local_status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
         uint32_t frame_len;
         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
-        Serial.println("[TAG] Odebrano odpowiedź! Sprawdzam, czy to RESP...");
-    
+        Serial.println(" Odebrano odpowiedź od anch! Sprawdzam, czy to RESP...");
+        
         //dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
         frame_len = dwt_read32bitreg(RX_FINFO_ID) & FRAME_LEN_MAX_EX;
         if (frame_len <= RX_BUF_LEN) {
@@ -230,7 +230,7 @@ float executeTWR(uint8_t target_anchor) {
      
     };
 
-   // --- SPRZĄTANIE (Niezależnie czy sukces, czy błąd) ---
+   // chanege for void uwbReset() which restes the UWB radio (analogically to tag fun))
     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK);
     return received_distance; // Zwracamy zmierzoną odległość (lub -1.0 jeśli był błąd)
 }
