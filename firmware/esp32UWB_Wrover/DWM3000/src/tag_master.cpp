@@ -348,12 +348,8 @@ float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
     
     dwt_setrxaftertxdelay(0); 
     dwt_setrxtimeout(0);  //polegamy tylko na licznku milis()    
-    
-    if (dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED) != DWT_SUCCESS) {
-    Serial.println("[TAG-CALIB] CAL starttx FAIL");
-    uwbReset();
-    return -1.0f;
-}
+    dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
+
 
     uint32_t local_status_reg = 0;
     unsigned long software_timeout_start = millis();
@@ -395,18 +391,14 @@ float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
         } 
       // 2. BEZPIECZNIK SPRZĘTOWY (Chroni przed absolutną ciszą lub zakłóceniami)
         if (local_status_reg & (SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR) && crs_cmd==true) {
-            Serial.println("[TAG-CALIB] Ostrzeżenie: Błąd sprzętowy RX - Wznawiam nasłuch...");
-            
-            // MUSIMY wyczyścić podniesione flagi błędu w radarze:
-            dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
-            // MUSIMY ponownie włączyć antenę, bo po błędzie radar się usypia:
+            uwbReset();                          //RADIO restet to IDLE! + wyczyszczone wszystkie flagi
             dwt_rxenable(DWT_START_RX_IMMEDIATE);
             software_timeout_start = millis(); // restet timer
         }
         //taskYIELD(); //<=> if we assign new task for core1-uwb
     }
 
-    // Sprzątanie rejestru przed wyjściem (niezależnie czy błąd czy dziwna ramka)
+    // Sprzątanie rejestru przed wyjściem + radio to IDLE!
     uwbReset();
     return  distance;
 }
