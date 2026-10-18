@@ -233,26 +233,11 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor) {
     // Ustawiamy, jak długo Tag ma czekać na Ponga (np. 3 milisekundy)
     dwt_setrxaftertxdelay(POLL_TX_TO_RESP_RX_DLY_UUS);
     dwt_setrxtimeout(RESP_RX_TIMEOUT_UUS);
+    //sendig POLL and waiting for RESP
+    dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED); //in immediate mode it ret alwyas DWT_SUCCESS
     
-    if (dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED) != DWT_SUCCESS) {
-    Serial.printf("[TAG] POLL starttx FAIL -> 0x%02X\n", target_anchor);
-    uwbReset();
-    return -1.0f;
-    }  
-      /*
-        //sendig POLL and waiting for RESP
-        dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
-        // Czekamy na odpowiedź RESP  => change for whiile(true) as anchors may not catch up with tag working in RTOS 
-
-    while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
-        //taskYIELD();  // <=> if we assign new task for core1-uwb
-        }
-    */
-    if (!waitForStatus(SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR, 50, status_reg)) {
-    Serial.println("[TAG] SW WATCHDOG: etap RESP");
-    uwbReset();
-    return -1.0f;
-    }
+    // Czekamy na odpowiedź RESP
+    while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) { }
     
     // 2. Coś przyleciało do anteny! -> zmiana na TAG initialized TWR czyli my pytamy 
     //po ID z naszej listy urządzeń docelowych (np. POLL do 0x0001)
@@ -340,9 +325,7 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor) {
         Serial.println("[TAG][BŁĄD] TIMEOUT 1: Kotwica nie odpowiedziała na pierwszego POLLa!");
     };
 
-    uwbReset(); // Resetujemy radar, żeby nie wisiał w dziwnym stanie
-//    // --- SPRZĄTANIE (Niezależnie czy sukces, czy błąd) ---
-//     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK);
+    uwbReset(); // prob no need but  will clean up for saftey measure 
     return received_distance; // Zwracamy zmierzoną odległość (lub -1.0 jeśli był błąd)
 }
 
@@ -366,7 +349,6 @@ float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
     dwt_setrxaftertxdelay(0); 
     dwt_setrxtimeout(0);  //polegamy tylko na licznku milis()    
     
-    //dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
     if (dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED) != DWT_SUCCESS) {
     Serial.println("[TAG-CALIB] CAL starttx FAIL");
     uwbReset();
