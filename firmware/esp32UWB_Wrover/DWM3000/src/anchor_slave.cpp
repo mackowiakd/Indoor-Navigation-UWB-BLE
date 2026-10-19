@@ -255,7 +255,7 @@ void send_calib_result_to_tag(uint8_t tag_id, uint8_t target_anchor_id, float di
     // fire and forget
     while (!(dwt_read32bitreg(SYS_STATUS_ID) & SYS_STATUS_TXFRS_BIT_MASK)) {}; //[1] petla zwatchdogiem (duzy timout ale  < infinite loop)
     
-    uwbReset(); //<-dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
+    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK); //uwbReset(); //<-
     
 }
 // anchor master (tag impostor)

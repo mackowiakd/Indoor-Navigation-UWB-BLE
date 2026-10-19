@@ -190,22 +190,7 @@ void TaskScan(void *pvParameters) {
         }
     }
 }
-// =========================================================================
-//    UWB radio debug helper function
-static bool waitForStatus(uint32_t mask, uint32_t timeout_ms, uint32_t &status) {
-    uint32_t t0 = millis();
-    while (!((status = dwt_read32bitreg(SYS_STATUS_ID)) & mask)) {
-        if (millis() - t0 > timeout_ms) return false;
-        taskYIELD(); // to w koncu potrzebujemy?
-    }
-    return true;
-}
 
-static void uwbReset() {
-    dwt_forcetrxoff();
-    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR |
-                      SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_TXFRS_BIT_MASK);
-}
 
 // =========================================================================
 // 5. UNIWERSALNA FUNKCJA UWB (TWR - Two Way Ranging)
@@ -215,7 +200,7 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor) {
 
     float received_distance = -1.0; // Domyślnie ustawiamy na -1.0, co oznacza błąd (timeout lub brak odpowiedzi)
     uint32_t status_reg = 0;
-    unsigned long software_watchdog = millis();
+    // unsigned long software_watchdog = millis();
  
     tx_poll_msg[DEST_IDX]   = target_anchor; // Kogo wołam (Kotwica)
     tx_poll_msg[SENDER_IDX] = TAG_ID; // SenderID
@@ -230,14 +215,14 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor) {
     dwt_writetxfctrl(sizeof(tx_poll_msg), 0, 1); 
 
     // KRYTYCZNA ZMIANA: Zabezpieczenie przed zawieszeniem!
-    // Ustawiamy, jak długo Tag ma czekać na Ponga (np. 3 milisekundy)
+    // Ustawiamy, jak długo Tag ma czekać na RESP 
     dwt_setrxaftertxdelay(POLL_TX_TO_RESP_RX_DLY_UUS);
     dwt_setrxtimeout(RESP_RX_TIMEOUT_UUS);
     //sendig POLL and waiting for RESP
     dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED); //in immediate mode it ret alwyas DWT_SUCCESS
     
     // Czekamy na odpowiedź RESP
-    while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) { }
+    while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) { } //lepiej na petle z watchdogiem (duzy timout ale jednak < infinite loop)
     
     // 2. Coś przyleciało do anteny! -> zmiana na TAG initialized TWR czyli my pytamy 
     //po ID z naszej listy urządzeń docelowych (np. POLL do 0x0001)
@@ -279,7 +264,7 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor) {
 
             // KRYTYCZNA ZMIANA: Wysyłamy FINAL, ale każemy radarowi znowu czekać! (DWT_RESPONSE_EXPECTED)
             dwt_setrxaftertxdelay(150); // Krótki czas na oddech
-            dwt_setrxtimeout(RESP_delay);     // Czekamy na REPORT do 8ms
+            dwt_setrxtimeout(REP_delay);     // Czekamy na REPORT do 8ms
         
 
             // Sending FINAL and waiting for REPORT -> also for while(true)
@@ -325,7 +310,9 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor) {
         Serial.println("[TAG][BŁĄD] TIMEOUT 1: Kotwica nie odpowiedziała na pierwszego POLLa!");
     };
 
-    uwbReset(); // prob no need but  will clean up for saftey measure 
+    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK); //tylko flagi odbioru- RX 
+   
+    //uwbReset(); // prob no need but  will clean up for saftey measure 
     return received_distance; // Zwracamy zmierzoną odległość (lub -1.0 jeśli był błąd)
 }
 
@@ -399,7 +386,7 @@ float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
     }
 
     // Sprzątanie rejestru przed wyjściem + radio to IDLE!
-    uwbReset();
+      dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK); //uwbReset(); spr czy to kotwica byla przyczyna
     return  distance;
 }
 
