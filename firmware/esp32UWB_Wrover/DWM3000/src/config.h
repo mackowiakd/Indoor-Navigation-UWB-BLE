@@ -14,6 +14,23 @@
 #include <string>
 #include <vector>
 
+// =========================================================================
+//    UWB radio debug helper function
+static bool waitForStatus(uint32_t mask, uint32_t timeout_ms, uint32_t &status) {
+    uint32_t t0 = millis();
+    while (!((status = dwt_read32bitreg(SYS_STATUS_ID)) & mask)) {
+        if (millis() - t0 > timeout_ms) return false;
+        taskYIELD(); // to w koncu potrzebujemy?
+    }
+    return true;
+}
+static void uwbReset() {
+    dwt_forcetrxoff();
+    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR |
+                      SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_TXFRS_BIT_MASK);
+}
+//=========================================================================
+
 // TODO zrobic wspolny jeden config (dla kotwicy i taga ) skoro i tak mamy static przy tablicach to kazda ma swoja ko
 /*
 Tryb Normalny (POL): Wymaga wymiany tylko dwóch adresów (Kto do kogo mówi).
@@ -32,7 +49,7 @@ Tryb Kalibracji (CAL): Wymaga wymiany aż trzech adresów, ponieważ Tag zleca K
 [11] = Do kogo Wykonawca ma odesłać wynik (Nadawca, Tag)
 */
 // =========================================================================
-// 1. KONFIGURACJA UWB (DW3000)
+// 1. KONFIGURACJA UWB (DW3000) -TAG
 // =========================================================================
 
 
@@ -84,21 +101,21 @@ static uint8_t frame_seq_nb = 0;
 #define POLL_TX_TO_RESP_RX_DLY_UUS 150   // Zmienione z 0 na 150: Dajmy chipowi ułamek mikrosekundy na przejście w nasłuch
 #define RESP_RX_TIMEOUT_UUS 10000       // Timeout 3ms zostaje (zabezpieczenie)
 #define RESP_RX_TO_FINAL_TX_DLY_UUS 4000 // dajmy Kotwicy BARDZO DUŻO czasu na matematykę przed FINALem
-#define RESP_delay 8000 //czekamy na resp od kotwicy do 8ms
+#define REP_delay 8000 //czekamy na resp od kotwicy do 8ms
 
 extern dwt_txconfig_t txconfig_options;
 
+// =========================================================================
 // ANCHOR CONFIG
-// ANCHOR CONFIG
+// =========================================================================
 
 #ifndef ANCHOR_NUM
   #define ANCHOR_NUM 1  // Użyte tylko wtedy, gdy platformio.ini NIE wstrzyknie własnej wartości
 #endif
 
-#define RX_BUF_LEN 24
 #define POLL_RX_TO_RESP_TX_DLY_UUS 8000
 #define RESP_TX_TO_FINAL_RX_DLY_UUS 150// no blind window after sending resp
-#define FINAL_RX_TIMEOUT_UUS 8000 // dajmy Kotwicy BARDZO DUŻO czasu na matematykę przed FINALem
+#define FINAL_RX_TIMEOUT_UUS 8000 // dajmy tagowi BARDZO DUŻO czasu na matematykę przed FINALem
 #define PRE_TIMEOUT 0 // usefull??
 
 static uint8_t tx_resp_msg[]   = {0x41, 0x88, 0, 0xCA, 0xDE, 'R', 'E', 'S', 0, 0, 0, 0, 0, 0, 0};

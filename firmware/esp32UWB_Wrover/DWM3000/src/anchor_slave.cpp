@@ -36,11 +36,11 @@ void handle_normal_poll(uint8_t sender_id, uint32_t frame_len) {
     // OR z maska DWT_RESPONSE_EXPECTED, zeby od razu po wyslaniu przejsc w tryb nasluchiwania na FINALa
     if (dwt_starttx(DWT_START_TX_DELAYED| DWT_RESPONSE_EXPECTED) == DWT_SUCCESS) {
         // KRYTYCZNE: Czekamy, aż REPORT wyleci w eter!
-        while (!(dwt_read32bitreg(SYS_STATUS_ID) & SYS_STATUS_TXFRS_BIT_MASK)) {};
+        while (!(dwt_read32bitreg(SYS_STATUS_ID) & SYS_STATUS_TXFRS_BIT_MASK)) {}; //watchdog loop
         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
         
         // ---- ETAP 2: CZEKAMY NA FINAL OD TAGA ----
-        while (!((local_status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {};
+        while (!((local_status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {}; //watchdog loop
 
         if (local_status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
             dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
@@ -88,11 +88,11 @@ void handle_normal_poll(uint8_t sender_id, uint32_t frame_len) {
                 // I Kotwica wysyła tx_report_msg!
                 dwt_writetxdata(sizeof(tx_report_msg), tx_report_msg, 0);
                 dwt_writetxfctrl(sizeof(tx_report_msg), 0, 0);
-                if (dwt_starttx(DWT_START_TX_IMMEDIATE) == DWT_SUCCESS) {
-                    // KRYTYCZNE: Czekamy, aż REPORT wyleci w eter!
-                    while (!(dwt_read32bitreg(SYS_STATUS_ID) & SYS_STATUS_TXFRS_BIT_MASK)) {};
-                    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
-                }
+                dwt_starttx(DWT_START_TX_IMMEDIATE);
+                // KRYTYCZNE: Czekamy, aż REPORT wyleci w eter!
+                while (!(dwt_read32bitreg(SYS_STATUS_ID) & SYS_STATUS_TXFRS_BIT_MASK)) {};
+                dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
+                
             };
 
         } 
@@ -106,6 +106,7 @@ void handle_normal_poll(uint8_t sender_id, uint32_t frame_len) {
     else {
         Serial.println("[criticalError]timeout RESP!");
     }
+    uwbReset(); //  clean up for saftey measure
 }
 
 
@@ -115,7 +116,6 @@ float executeTWR(uint8_t target_anchor) {
     float received_distance = -1.0; // Domyślnie ustawiamy na -1.0, co oznacza błąd (timeout lub brak odpowiedzi)
     uint32_t local_status_reg = 0;
 
-    // POLL message header! already defined
    
     tx_poll_msg[DEST_IDX]   = target_anchor; // Kogo wołam (Kotwica)
     tx_final_msg[DEST_IDX]  = target_anchor; // Do kogo wysyłam FINAL (Kotwica)
@@ -132,31 +132,26 @@ float executeTWR(uint8_t target_anchor) {
     dwt_writetxdata(sizeof(tx_poll_msg), tx_poll_msg, 0);
     dwt_writetxfctrl(sizeof(tx_poll_msg), 0, 1); 
 
-
-    // KRYTYCZNA ZMIANA: Zabezpieczenie przed zawieszeniem!
-    // Ustawiamy, jak długo Kotwica ma czekać na Ponga (np. 3 milisekundy)
+    // timout na RESP od innej kotwicy-salve
     dwt_setrxaftertxdelay(POLL_TX_TO_RESP_RX_DLY_UUS);
     dwt_setrxtimeout(RESP_RX_TIMEOUT_UUS);
     //sendig POLL and waiting for RESP
     dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
 
     // Czekamy na odpowiedź RESP od Tagu
-    while (!((local_status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
-     }
-    // 2. Coś przyleciało do anteny! -> zmiana na TAG initialized TWR czyli my pytamy 
-    //po ID z naszej listy urządzeń docelowych (np. POLL do 0x0001)
-
+    while (!((local_status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {} //lepiej na petle z watchdogiem niz inf loop (ale duzy timout)
+    // 2. Coś przyleciało do anteny! -> zmiana na TAG initialized TWR 
+    
     if (local_status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
         uint32_t frame_len;
-        dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
+        dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK); //RXFCG (poprawna ramka),
         Serial.println(" Odebrano odpowiedź od anch! Sprawdzam, czy to RESP...");
-        
-        //dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
+       
         frame_len = dwt_read32bitreg(RX_FINFO_ID) & FRAME_LEN_MAX_EX;
         if (frame_len <= RX_BUF_LEN) {
             dwt_readrxdata(rx_buffer, frame_len, 0);
         }
-        rx_buffer[ALL_MSG_SN_IDX] = 0; // Usunięcie numeru sekwencyjnego do porównania- jakiego prownania??
+        rx_buffer[ALL_MSG_SN_IDX] = 0; // Usunięcie numeru sekwencyjnego do porównania
         
         // RESP from tag deliverd, sending FINAL
         if (rx_buffer[CMD_IDX] == 'R' && rx_buffer[CMD_IDX+1] == 'E' && rx_buffer[CMD_IDX+2] == 'S' && rx_buffer[DEST_IDX] == ANCHOR_NUM) {
@@ -183,7 +178,7 @@ float executeTWR(uint8_t target_anchor) {
 
             // KRYTYCZNA ZMIANA: Wysyłamy FINAL, ale każemy radarowi znowu czekać! (DWT_RESPONSE_EXPECTED)
             dwt_setrxaftertxdelay(150); // Krótki czas na oddech
-            dwt_setrxtimeout(RESP_delay);     // Czekamy na REPORT do 8ms
+            dwt_setrxtimeout(REP_delay);     // Czekamy na REPORT do 8ms
         
 
             // Sending FINAL and waiting for REPORT
@@ -198,7 +193,7 @@ float executeTWR(uint8_t target_anchor) {
                 };
 
                 if (local_status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
-                    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
+                    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK); 
                     frame_len = dwt_read32bitreg(RX_FINFO_ID) & FRAME_LEN_MAX_EX;
                     dwt_readrxdata(rx_buffer, frame_len, 0);
                     rx_buffer[ALL_MSG_SN_IDX] = 0;
@@ -229,9 +224,7 @@ float executeTWR(uint8_t target_anchor) {
           Serial.println(" TIMEOUT 1: Kotwica nie odpowiedziała na pierwszego POLLa!");
      
     };
-
-   // chanege for void uwbReset() which restes the UWB radio (analogically to tag fun))
-    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK);
+    uwbReset(); // restes TX also
     return received_distance; // Zwracamy zmierzoną odległość (lub -1.0 jeśli był błąd)
 }
 
@@ -257,11 +250,13 @@ void send_calib_result_to_tag(uint8_t tag_id, uint8_t target_anchor_id, float di
     Serial.printf("[KOTWICA-MASTER] Wysyłam wynik kalibracji (%.2fm) do Taga...\n", distance);
 
     // 5. Wysylka (IMMEDIATE - bez czekania na odpowiedź)
-    if (dwt_starttx(DWT_START_TX_IMMEDIATE) == DWT_SUCCESS) {
-        // fire and forget
-        while (!(dwt_read32bitreg(SYS_STATUS_ID) & SYS_STATUS_TXFRS_BIT_MASK)) {};
-        dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
-    }
+    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);   // wyczyść starą flagę
+    dwt_starttx(DWT_START_TX_IMMEDIATE); // immediate == success
+    // fire and forget
+    while (!(dwt_read32bitreg(SYS_STATUS_ID) & SYS_STATUS_TXFRS_BIT_MASK)) {}; //[1] petla zwatchdogiem (duzy timout ale  < infinite loop)
+    
+    uwbReset(); //<-dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
+    
 }
 // anchor master (tag impostor)
 void handle_calibration_delegation(uint8_t target_anchor_id, uint8_t tag_id) {
