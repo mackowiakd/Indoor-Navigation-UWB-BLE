@@ -33,7 +33,9 @@ import com.polsl.bemyeyes.navigation.dataBase.NavigationTarget
 import com.polsl.bemyeyes.navigation.dataBase.RetrofitClient
 import com.polsl.bemyeyes.ui.theme.BeMyEyesTheme
 import kotlinx.coroutines.launch
-
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.TextStyle
 
 
 class MainActivity : ComponentActivity() {
@@ -224,6 +226,7 @@ class MainActivity : ComponentActivity() {
                                     //i tu robimy drugie zadanie pomiaru (dla 3 > kotwic w naszej lokalizacji => sprawdzamuy czy jest tyle dostepnych
                                     //jesi nie to zwracamy -1 jako not possible,
                                     //w sliniku AuCalib dodajemy funkcje ktora z przetwrza te 3 pomiary z kotwicy i nadaje tagowi
+                                    scope.launch { fetchDatabase() } //odswiezamy DB
 
                                 } else {
                                     appToEspLogs.add(0, "❌ Za mało kotwic w strefie do kalibracji (wymagane min. 2)")
@@ -317,7 +320,7 @@ fun NavigationScreen(
     currentLocation: Int? = null,
     onClearNavigation: () -> Unit ,
     onCalibrateZoneClick: (Int?) -> Unit,
-    onCalibrateTagClick: (IoTDevice) -> Unit, // brak UI dla wyboru taga do kalib (dla  konkretnego locationID)
+    onCalibrateTagClick: (IoTDevice) -> Unit, // TODO UI dla wyboru tagaBLE do kalib (dla  konkretnego locationID)
     zoneDevices: List<IoTDevice>,
     userPosition: Pair<Double, Double>?
 ) {
@@ -526,6 +529,8 @@ fun RoomMapCanvas(
     userPosition: Pair<Double, Double>?,
     modifier: Modifier = Modifier
 ) {
+    val textMeasurer = rememberTextMeasurer()
+    val textStyle = TextStyle(color = Color.White, fontSize = 8.sp)
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -585,6 +590,12 @@ fun RoomMapCanvas(
             devices.forEach { device ->
                 val x = device.globalX?.toFloat() ?: return@forEach
                 val y = device.globalY?.toFloat() ?: return@forEach
+                // Przygotowujemy skróconą etykietę (np. "A_5d" z adresu "0x005d" albo semanticRole)
+                val shortName = if (device.deviceType == "UWB_ANCHOR") {
+                    "A_" + device.macAddress.takeLast(2).uppercase() // Z "0x0001" zrobi "A_01"
+                } else {
+                    device.semanticRole ?: "POI" // dla BLE np "Coffee" z bazy
+                }
 
                 // Tłumaczymy metry na piksele (zwróć uwagę na minus przy osi Y)
                 val canvasX = originX + (x * scale)
@@ -597,12 +608,26 @@ fun RoomMapCanvas(
                         topLeft = Offset(canvasX - 15f, canvasY - 15f),
                         size = androidx.compose.ui.geometry.Size(30f, 30f)
                     )
+                    // Podpisujemy kotwicę
+                    drawText(
+                        textMeasurer = textMeasurer,
+                        text = shortName,
+                        topLeft = Offset(canvasX - 15f, canvasY + 20f), // Pod kwadratem
+                        style = textStyle
+                    )
                 } else {
                     // Cel BLE = Szare Koło
                     drawCircle(
                         color = Color.LightGray,
                         radius = 12f,
                         center = Offset(canvasX, canvasY)
+                    )
+                    // Podpisujemy BEACON
+                    drawText(
+                        textMeasurer = textMeasurer,
+                        text = shortName,
+                        topLeft = Offset(canvasX - 15f, canvasY + 15f), // Pod kołem
+                        style = textStyle
                     )
                 }
             }
