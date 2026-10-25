@@ -12,13 +12,17 @@ import kotlinx.coroutines.*
 class NavigationRoutingEngine(
     private val buildingTopologyDB: BuildingTopologyDatabase,
     private val speechService: AccessibilitySpeechService, // Upewnij się, że ta klasa istnieje
+    private val telemetryLogger: TelemetryLogger,
     private val onLocationChanged: ((Int) -> Unit)? = null //callback o zmienie locationID
+
 ) {
 
     // 1. STANY SILNIKA NAWIGACJI
     // Współrzędne historyczne użytkownika
     private var previousX: Double? = null
     private var previousY: Double? = null
+    private var CurrentX: Double=0.0
+    private var CurrentY: Double=0.0
     // ID urządzeń, które już minęliśmy w tej sesji (żeby nie powtarzać komunikatu co 3 sekundy)
     private val announcedPoisInStep = mutableSetOf<String>()
     private var currentTarget: NavigationTarget? = null
@@ -47,6 +51,15 @@ class NavigationRoutingEngine(
     // =========================================================================
     // AKCJE UŻYTKOWNIKA (Wywoływane z MainActivity po kliknięciu przycisku)
     // =========================================================================
+
+    fun getCurrentDistancesSnapshot(): Map<String, Double> {   // for telemetryLogger
+        // Zwraca słownik: Adres MAC -> Zmierzony dystans
+        return latestAnchorDistances.entries.associate { it.key.macAddress to it.value }
+    }
+    fun getCurrentPositionSnapshot(): Pair<Double, Double> {   // for telemetryLogger
+        // Zwraca słownik: Adres MAC -> Zmierzony dystans
+        return Pair(CurrentX,CurrentY)
+    }
 
     fun clearCurrentTarget() {
         currentTarget = null
@@ -233,6 +246,7 @@ class NavigationRoutingEngine(
                     points.add(RangedPoint(deviceInMap.globalX, deviceInMap.globalY, dist))
                 }
             }
+
             // Jeśli widzimy przynajmniej 3 kotwice (albo 2, jeśli użyjesz strategii korytarzowej)
             if (points.size >= 2) {
                 val strategy: PositioningStrategy = if (points.size == 2) {
@@ -244,8 +258,19 @@ class NavigationRoutingEngine(
                myPosition = strategy.calculatePosition(points) // send to map ploting
                 if (myPosition != null) {
                     // Przekazujemy (X, Y) do logiki wektorowej
-                    evaluatePassingObjects2D(myPosition.first, myPosition.second) //jako arg przesylac liste urzadzen -> micro/macro/micro&macro/
+                    //todo pass to TelemetryLogger : capture currentX, CurrnetY
+                    CurrentX=myPosition.first
+                    CurrentY=myPosition.second
+                    evaluatePassingObjects2D(CurrentX, CurrentY) //jako arg przesylac liste urzadzen -> micro/macro/micro&macro/
                     onPositionUpdated?.invoke(myPosition.first, myPosition.second)
+                    // 2. LOGOWANIE CIĄGŁE (Test w ruchu) Przekazujemy null jako współrzędne referencyjne, bo użytkownik idzie.
+                    telemetryLogger.logDataRow(
+                        refX = null,
+                        refY = null,
+                        measuredDist = distanceOrRssi,
+                        anchorId = macAddress,
+                        calulatedPos = Pair(CurrentX,CurrentY)
+                    )
                 }
             }
         }
@@ -303,7 +328,6 @@ class NavigationRoutingEngine(
         val poiDy = poiY - currentY
         val relPos=calculateRelativePosition(moveDx, moveDy, poiDx, poiDy)
 
-            //todo implem 2D vector logic to determine direction (as in evaluatePassingObjects2D) both should used one file - VectorMath.kt
 
         if (device.deviceType == "UWB_ANCHOR") {
             // =======================================================

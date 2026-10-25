@@ -8,6 +8,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.snap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -43,6 +44,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var topologyDatabase: BuildingTopologyDatabase
     private lateinit var speechService: AccessibilitySpeechService
     private lateinit var routingEngine: NavigationRoutingEngine
+    private lateinit var telemetryLogger: TelemetryLogger
     private lateinit var bleManager: BleConnectionManager
 
     protected val debugLogs = mutableStateListOf<String>()  // Stan trzymający logi, obserwowany przez UI (Jetpack Compose)
@@ -59,8 +61,9 @@ class MainActivity : ComponentActivity() {
         //@TODO evoke fun to downloead data from DB into local cache (like singleton RAM file?)
         topologyDatabase = BuildingTopologyDatabase()
         speechService = AccessibilitySpeechService(this)
+        telemetryLogger = TelemetryLogger(this)
         // 1. INICJALIZACJA SILNIKA I JEGO CALLBACK (Zamknięty klamrą!)
-        routingEngine = NavigationRoutingEngine(topologyDatabase, speechService) { locationId ->
+        routingEngine = NavigationRoutingEngine(topologyDatabase, speechService, telemetryLogger ) { locationId ->
             runOnUiThread {
                 currentLocationIdState.value = locationId
             }
@@ -243,8 +246,41 @@ class MainActivity : ComponentActivity() {
                             routingEngine.currentLocationId!!)
                         autoCalibrationEngine.startTagCalibration(tag, zoneAnchors)
 
-                        }
+                        },
+                        onStartContinuousLog = {
+                            telemetryLogger.startLogging()
+                            appToEspLogs.add(0, "🔴 Rozpoczęto logowanie ciągłe (bez X, Y)")
+                        },
 
+                        onStopContinuousLog = {
+                            telemetryLogger.stopLogging()
+                            appToEspLogs.add(0, "⏹ Zatrzymano logowanie ciągłe")
+                        },
+
+                        onLogStaticSample = { refX, refY ->
+                            // 1. Zabezpieczenie: jeśli plik nie jest otwarty, otwieramy go
+                            if (!telemetryLogger.isLogging) telemetryLogger.startLogging()
+
+                            // 2. Pobieramy zamrożony stan najświeższych odległości z silnika
+                            val snapshotDistance = routingEngine.getCurrentDistancesSnapshot()
+                            val snapshotPoint =routingEngine.getCurrentPositionSnapshot()
+
+                            if (snapshotDistance.isEmpty()) {
+                                appToEspLogs.add(0, "⚠️ Brak pomiarów! Upewnij się, że kotwice nadają.")
+                            } else {
+                                // 3. Zapisujemy każdy z pomiarów do pliku, parując go z twardymi współrzędnymi X, Y
+                                snapshotDistance.forEach { (macAddress, distance) ->
+                                    telemetryLogger.logDataRow(
+                                        refX = refX,
+                                        refY = refY,
+                                        measuredDist = distance,
+                                        anchorId = macAddress,
+                                        snapshotPoint
+                                    )
+                                }
+                                appToEspLogs.add(0, "✅ Zapisano próbkę dla X:$refX, Y:$refY (ilość kotwic: ${snapshotDistance.size})")
+                            }
+                        }
 
                     )
                 }
@@ -322,10 +358,18 @@ fun NavigationScreen(
     onCalibrateZoneClick: (Int?) -> Unit,
     onCalibrateTagClick: (IoTDevice) -> Unit, // TODO UI dla wyboru tagaBLE do kalib (dla  konkretnego locationID)
     zoneDevices: List<IoTDevice>,
-    userPosition: Pair<Double, Double>?
+    userPosition: Pair<Double, Double>?,
+    onStartContinuousLog: () -> Unit,
+    onStopContinuousLog: () -> Unit,
+    onLogStaticSample: (Double, Double) -> Unit
 ) {
 
     val scrollState = rememberScrollState()
+    // for telemetryTest
+    var isDevPanelExpanded by remember { mutableStateOf(false) }
+    var refXInput by remember { mutableStateOf("") }
+    var refYInput by remember { mutableStateOf("") }
+    var isContinuousLogging by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -418,14 +462,93 @@ fun NavigationScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
         // ==========================================================
-        // PANEL ADMINA: Przycisk Auto-Kalibracji
+        // PANEL ADMINA: Przycisk Auto-Kalibracji - zamiast tego  PRZYCISK ROZWIJANIA PANELU ---
         // ==========================================================
+      //TODO callbacki do zapisu onLogStaticSample(x, y) i logDataRow(..)
         Button(
-            onClick = { onCalibrateZoneClick(currentLocation) },
-            modifier = Modifier.fillMaxWidth().height(40.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+            onClick = { isDevPanelExpanded = !isDevPanelExpanded },
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)
         ) {
-            Text("🔧 ADMIN: Autokalibruj obecną strefę")
+            Text(if (isDevPanelExpanded) "Ukryj Panel Dewelopera" else "⚙️ Pokaż Panel Dewelopera")
+        }
+//        Button(
+//            onClick = { onCalibrateZoneClick(currentLocation) },
+//            modifier = Modifier.fillMaxWidth().height(40.dp),
+//            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+//        ) {
+//            Text("🔧 ADMIN: Autokalibruj obecną strefę")
+//        }
+        // --- ZAWARTOŚĆ PANELU ---
+        if (isDevPanelExpanded) {
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF2A2A2A))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Narzędzia Testowe", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 1. ZARZĄDZANIE KALIBRACJĄ
+                    Button(
+                        onClick = { onCalibrateZoneClick(currentLocation) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+                    ) {
+                        Text("Autokalibruj obecną strefę (Infrastruktura)")
+                    }
+
+
+                    Divider(color = Color.Gray)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // 2. LOGOWANIE CIĄGŁE (Test w ruchu - bez referencji)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Switch(
+                            checked = isContinuousLogging,
+                            onCheckedChange = { isChecked ->
+                                isContinuousLogging = isChecked
+                                if (isChecked) onStartContinuousLog() else onStopContinuousLog() //main ma wywolac callback do logDataRow( X, Y distance, anchor). x,y not null we need them
+                            }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Logowanie ciągłe (bez współrzędnych)", color = Color.White)
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // 3. LOGOWANIE PUNKTOWE (Test statyczny z podaniem X, Y)
+                    Text("Referencyjny Punkt testowy:", color = Color.LightGray)
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        OutlinedTextField(
+                            value = refXInput,
+                            onValueChange = { refXInput = it },
+                            label = { Text("X [m]") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = refYInput,
+                            onValueChange = { refYInput = it },
+                            label = { Text("Y [m]") },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Button(
+                        onClick = {
+                            val x = refXInput.toDoubleOrNull()
+                            val y = refYInput.toDoubleOrNull()
+                            if (x != null && y != null) {
+                                onLogStaticSample(x, y)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00ACC1))
+                    ) {
+                        Text("Zapisz Próbkę Statyczną")
+                    }
+                }
+            }
         }
         Spacer(modifier = Modifier.height(4.dp))
 
