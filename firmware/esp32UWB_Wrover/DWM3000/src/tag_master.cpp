@@ -223,9 +223,16 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor) {
     
     // Czekamy na odpowiedź RESP
     while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) { } //lepiej na petle z watchdogiem (duzy timout ale jednak < infinite loop)
-    
-    // 2. Coś przyleciało do anteny! -> zmiana na TAG initialized TWR czyli my pytamy 
-    //po ID z naszej listy urządzeń docelowych (np. POLL do 0x0001)
+    /*
+    uint32_t t0 = millis();
+while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & MASK)) {
+    if (millis() - t0 > 50) {
+        Serial.printf("[TAG][WD] etap RESP, SYS_STATUS=%08lX\n", status_reg);
+        uwbToIdle(); return -1.0f;
+    }
+}
+    */
+    // POLL received ID z naszej listy urządzeń docelowych (np. POLL do 0x0001)
 
     if (status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
         uint32_t frame_len;
@@ -348,6 +355,7 @@ float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
         // 1. BEZPIECZNIK PROGRAMOWY (Chroni przed ciągłym resetowaniem nasłuchu przez śmieci)
         if (millis() - software_timeout_start > timeout) {
             Serial.println("[TAG-CALIB] Błąd: Software TIMEOUT");
+            uwbReset(); //reset to IDLE -> sotware timeout doesnt do it!
             break; 
         }
          local_status_reg = dwt_read32bitreg(SYS_STATUS_ID);
@@ -382,10 +390,10 @@ float executeCalibrationCommand(uint8_t target_anchor, uint8_t dest_anchor) {
             dwt_rxenable(DWT_START_RX_IMMEDIATE);
             software_timeout_start = millis(); // restet timer
         }
-        //taskYIELD(); //<=> if we assign new task for core1-uwb
+        
     }
 
-    // Sprzątanie rejestru przed wyjściem + radio to IDLE!
+    // Sprzątanie rejestru przed wyjściem + radio jest juz IDLE!
       dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK); //uwbReset(); spr czy to kotwica byla przyczyna
     return  distance;
 }
