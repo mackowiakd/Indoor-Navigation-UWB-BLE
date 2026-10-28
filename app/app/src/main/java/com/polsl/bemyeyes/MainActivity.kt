@@ -8,7 +8,6 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.core.snap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -252,10 +251,11 @@ class MainActivity : ComponentActivity() {
                             appToEspLogs.add(0, "🔴 Rozpoczęto logowanie ciągłe (bez X, Y)")
                         },
 
-                        onStopContinuousLog = {
+                        onStopLogging = {
                             telemetryLogger.stopLogging()
-                            appToEspLogs.add(0, "⏹ Zatrzymano logowanie ciągłe")
+                            appToEspLogs.add(0, "⏹ Zatrzymano logowanie, plik zapisany")
                         },
+                        //onStopLogging -brak
 
                         onLogStaticSample = { refX, refY ->
                             // 1. Zabezpieczenie: jeśli plik nie jest otwarty, otwieramy go
@@ -354,13 +354,13 @@ fun NavigationScreen(
     microTargets: List<NavigationTarget>,
     currentTargetName: String,
     currentLocation: Int? = null,
-    onClearNavigation: () -> Unit ,
+    onClearNavigation: () -> Unit,
     onCalibrateZoneClick: (Int?) -> Unit,
     onCalibrateTagClick: (IoTDevice) -> Unit, // TODO UI dla wyboru tagaBLE do kalib (dla  konkretnego locationID)
     zoneDevices: List<IoTDevice>,
     userPosition: Pair<Double, Double>?,
     onStartContinuousLog: () -> Unit,
-    onStopContinuousLog: () -> Unit,
+    onStopLogging: () -> Unit,
     onLogStaticSample: (Double, Double) -> Unit
 ) {
 
@@ -508,7 +508,7 @@ fun NavigationScreen(
                             checked = isContinuousLogging,
                             onCheckedChange = { isChecked ->
                                 isContinuousLogging = isChecked
-                                if (isChecked) onStartContinuousLog() else onStopContinuousLog() //main ma wywolac callback do logDataRow( X, Y distance, anchor). x,y not null we need them
+                                if (isChecked) onStartContinuousLog() else onStopLogging() //main ma wywolac callback do logDataRow( X, Y distance, anchor). x,y not null we need them
                             }
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -540,12 +540,31 @@ fun NavigationScreen(
                             val y = refYInput.toDoubleOrNull()
                             if (x != null && y != null) {
                                 onLogStaticSample(x, y)
+                                // ROZWIĄZANIE 1: ZEROWANIE PÓL
+                                // Po poprawnym pobraniu i wysłaniu danych, czyścimy UI
+                                refXInput = ""
+                                refYInput = ""
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00ACC1))
                     ) {
                         Text("Zapisz Próbkę Statyczną")
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Divider(color = Color.Gray)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // ROZWIĄZANIE 2: GŁÓWNY PRZYCISK ZAKOŃCZENIA LOGOWANIA
+                    Button(
+                        onClick = {
+                            onStopLogging()
+                            isContinuousLogging = false // Odklikujemy też switcha, żeby UI było spójne
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                    ) {
+                        Text("⏹ Zakończ logowanie i ZAPISZ plik CSV")
                     }
                 }
             }
@@ -719,7 +738,9 @@ fun RoomMapCanvas(
                 } else {
                     device.semanticRole ?: "POI" // dla BLE np "Coffee" z bazy
                 }
-
+                // 2. NOWE: Formatowanie współrzędnych (np. "A_01\n(4.50m, 0.00m)")
+                val coordsText = String.format(java.util.Locale.US, "\n(%.2fm, %.2fm)", x, y)
+                val fullLabel = shortName + coordsText
                 // Tłumaczymy metry na piksele (zwróć uwagę na minus przy osi Y)
                 val canvasX = originX + (x * scale)
                 val canvasY = originY - (y * scale)
@@ -734,7 +755,7 @@ fun RoomMapCanvas(
                     // Podpisujemy kotwicę
                     drawText(
                         textMeasurer = textMeasurer,
-                        text = shortName,
+                        text = fullLabel,
                         topLeft = Offset(canvasX - 15f, canvasY + 20f), // Pod kwadratem
                         style = textStyle
                     )
@@ -748,7 +769,7 @@ fun RoomMapCanvas(
                     // Podpisujemy BEACON
                     drawText(
                         textMeasurer = textMeasurer,
-                        text = shortName,
+                        text = fullLabel,
                         topLeft = Offset(canvasX - 15f, canvasY + 15f), // Pod kołem
                         style = textStyle
                     )
