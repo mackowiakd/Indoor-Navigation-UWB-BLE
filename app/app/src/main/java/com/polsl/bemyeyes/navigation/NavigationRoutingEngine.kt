@@ -47,6 +47,14 @@ class NavigationRoutingEngine(
     // Pamięta ostatnio zmierzony dystans do każdej kotwicy
     private val latestAnchorDistances = mutableMapOf<IoTDevice,Double >()
 
+    private val positionHistory = mutableListOf<Pair<Double, Double>>()
+    private val MAX_HISTORY_SIZE = 4
+
+
+    // 🕒 NOWOŚĆ: Czasowy cooldown (macAddress -> timestamp)
+    private val lastAnnouncedTimeMap = mutableMapOf<String, Long>()
+    private val COOLDOWN_TIME_MS = 10000L // 10 sekund blokady
+
 
     // =========================================================================
     // AKCJE UŻYTKOWNIKA (Wywoływane z MainActivity po kliknięciu przycisku)
@@ -117,32 +125,29 @@ class NavigationRoutingEngine(
     // Analiza iloczynu wektorowego pod kątem lewej/prawej strony
     //==========================================================
     private fun evaluatePassingObjects2D(currentX: Double, currentY: Double) {
-        // Jeśli nie ma historii, zapisujemy obecny punkt i czekamy na kolejną paczkę danych
-        if (previousX == null || previousY == null) {
-            previousX = currentX
-            previousY = currentY
-            return
-        }
 
-        // Wektor Twojego ruchu: skąd-dokąd (v)
-        val moveDx = currentX - previousX!!
-        val moveDy = currentY - previousY!!
+        val k = getBufferedKinematics(currentX, currentY) ?: return
+        val moveDx =k.first
+        val moveDy = k.second
         val vLength = Math.hypot(moveDx, moveDy)
         // Filtrowanie szumu: jeśli użytkownik stoi w miejscu, nie wyliczamy kierunku
-        if (vLength < 0.4) return
+        if (vLength < 0.5) return
 
         // Pobieramy z bazy wszystkie cele mikro (POI) dla obecnej strefy -> opcja rozszerzenia na Macro anchros
         val activePOIs = buildingTopologyDB.getMicroTargets(currentLocationId)
+        val currentTime = System.currentTimeMillis() // Pobieramy aktualny czas
 
         for (target in activePOIs) {
-
             val device = buildingTopologyDB.getDeviceByMac(target.associatedMac ?: "") ?: continue
-            // wyciągamy współrzędne 2D z obiektu device!
-            val poiX = device.globalX ?: continue
+            // 🕒 2. SPRAWDZENIE COOLDOWNU: Jeśli mówiliśmy o tym obiekcie < 12s temu, pomijamy go
+            val lastTime = lastAnnouncedTimeMap[target.associatedMac] ?: 0L
+            if (currentTime - lastTime < COOLDOWN_TIME_MS) continue
+
+            val poiX = device.globalX ?: continue   // wyciągamy współrzędne 2D z obiektu device!
             val poiY = device.globalY ?: continue
             // Wektor do obiektu
-            val poiDx = poiX - currentX
-            val poiDy = poiY - currentY
+            val poiDx = poiX -  positionHistory.map { it.first }.average()
+            val poiDy = poiY -  positionHistory.map { it.second }.average()
             val relPos=calculateRelativePosition(moveDx, moveDy, poiDx, poiDy)
 
             if (relPos.lateralDistance <= 4.0 && relPos.forwardDistance in -0.5..1.5) {
@@ -160,18 +165,17 @@ class NavigationRoutingEngine(
                     continue
                 }
 
+
                 speechService.announceBackground("Mijasz ${target.name} po Twojej ${relPos.side} stronie.")
                 announcedPoisInStep.add(target.associatedMac ?: "")
             } else {
-                // Gdy użytkownik oddali się od obiektu, usuwamy go z listy ogłoszonych,
-                // żeby system mógł go ogłosić, gdy użytkownik będzie wracał korytarzem
-                if (relPos.forwardDistance < -1.0 || relPos.lateralDistance > 5.0) {
+                // Gdy użytkownik oddali się od obiektu, usuwamy go z listy ogłoszonych
+                if (relPos.forwardDistance < -2.0 || relPos.lateralDistance > 4.0) {
                     announcedPoisInStep.remove(target.associatedMac)
                 }
             }
         }
-
-        // Aktualizacja historii
+        // Aktualizacja historii -probably became useless
         previousX = currentX
         previousY = currentY
     }
@@ -183,9 +187,7 @@ class NavigationRoutingEngine(
         // 1. Szukamy, czy to urządzenie z Cache'u? ( w senie czy nie zlapalismy silnego sygnalu (przy cold start) z np kogos sluchawek BT -> zwraca null
         val scannedDev = buildingTopologyDB.cachedDevices.find { it.macAddress == macAddress } ?: return null
 
-        // Sprawdzamy, czy urządzenie, które usłyszeliśmy, wymusza zmianę lokalizacji
-        // Dzieje się tak podczas ZIMNEGO STARTU (currentLocationId == null)
-        // LUB gdy złapaliśmy Trigger w windzie
+        // Sprawdzamy, czy urządzenie, które usłyszeliśmy, wymusza zmianę lokalizacji [cold start || trigger dev]
         if (currentLocationId != scannedDev.locationId) {
             // 3. HISTEREZA: Czy przekroczyliśmy fizyczny próg nowej strefy?
             val currentTime = System.currentTimeMillis()
@@ -234,7 +236,6 @@ class NavigationRoutingEngine(
         // 1. Zidentyfikuj, co usłyszało ESP32
         val detectedDevice = buildingTopologyDB.getDeviceByMac(macAddress) ?: return
 
-
         //pozycjonowanie
         if (detectedDevice.deviceType == "UWB_ANCHOR") {
             // Aktualizujemy ostatnią znaną odległość od tej kotwicy
@@ -269,7 +270,7 @@ class NavigationRoutingEngine(
                         refY = null,
                         measuredDist = distanceOrRssi,
                         anchorId = macAddress,
-                        calulatedPos = Pair(CurrentX,CurrentY)
+                        calculatedPose = Pair(CurrentX,CurrentY)
                     )
                 }
             }
@@ -299,35 +300,26 @@ class NavigationRoutingEngine(
     // FUNKCJE POMOCNICZE AUDIO
     // =========================================================================
     private fun announceDistanceProgress(device: IoTDevice,distance: Double, currentX: Double, currentY: Double) {
+
         val distanceInt = distance.roundToInt()
         val dest = currentTarget ?: return // Używamy nowej zmiennej currentTarget!
         val currentTime = System.currentTimeMillis()
-
         lastTargetSignalTime = currentTime // tzn ze dostalismy syganl z targetu
 
-        if (previousX == null || previousY == null ) {
-            previousX = currentX
-            previousY = currentY
-            return
-        }
-
+       val k=getBufferedKinematics(currentX , currentY) ?: return
         // Wektor Twojego ruchu: skąd-dokąd (v)
-        val moveDx = currentX - previousX!!
-        val moveDy = currentY - previousY!!
+        val moveDx = k.first
+        val moveDy = k.second
         val vLength = Math.hypot(moveDx, moveDy)
-        // Filtrowanie szumu: jeśli użytkownik stoi w miejscu, nie wyliczamy kierunku
-        if (vLength < 0.4) return
 
+        if (vLength < 0.5) return  // Filtrowanie szumu: jeśli użytkownik stoi w miejscu, nie wyliczamy kierunku
 
-        //val device = buildingTopologyDB.getDeviceByMac(IoTDevice.associatedMac ?: "")
-        // wyciągamy współrzędne 2D z obiektu device!
         val poiX = device.globalX?:(0.0)
         val poiY = device.globalY?:(0.0)
-        // Wektor do obiektu
-        val poiDx = poiX - currentX
-        val poiDy = poiY - currentY
+        // Wektor do obiektu (usredniony)
+        val poiDx = poiX -  positionHistory.map { it.first }.average()
+        val poiDy = poiY -  positionHistory.map { it.second }.average()
         val relPos=calculateRelativePosition(moveDx, moveDy, poiDx, poiDy)
-
 
         if (device.deviceType == "UWB_ANCHOR") {
             // =======================================================
@@ -422,6 +414,29 @@ class NavigationRoutingEngine(
         // Aktualizacja historii
         previousX = currentX
         previousY = currentY
+    }
+    private fun getBufferedKinematics(currentX: Double, currentY: Double): Pair<Double, Double>? {
+        // 1. Moving Average - bufor historii pozycji
+        positionHistory.add(Pair(currentX, currentY))
+        if (positionHistory.size > MAX_HISTORY_SIZE) {
+            positionHistory.removeAt(0)
+        }
+
+        // Za mało punktów do wyznaczenia wektora ruchu
+        if (positionHistory.size < 2) return null
+
+        // 2. Uśredniamy wektor ruchu (Moving Average dla przemieszczenia)
+        var sumDx = 0.0
+        var sumDy = 0.0
+        for (i in 0 until positionHistory.size - 1) {
+            sumDx += positionHistory[i + 1].first - positionHistory[i].first
+            sumDy += positionHistory[i + 1].second - positionHistory[i].second
+        }
+        val moveDx = sumDx / (positionHistory.size - 1)
+        val moveDy = sumDy / (positionHistory.size - 1)
+        val vLength = Math.hypot(moveDx, moveDy)
+
+        return Pair(moveDx, moveDy)
     }
 
     private fun getMeterSpelling(count: Int): String {
