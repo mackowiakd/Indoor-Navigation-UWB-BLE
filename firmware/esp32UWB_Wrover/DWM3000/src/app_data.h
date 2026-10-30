@@ -14,12 +14,14 @@ struct BleDeviceData {
     std::string mac;
     float distance;
     unsigned long last_seen_ms; // Timestamp ostatniego widzenia, do usuwania duchow wylaczonych tagow
+   
 };
 struct UwbDeviceData {
     uint8_t id;
     float distance;
     unsigned long last_seen_ms; // Timestamp ostatniego widzenia, do usuwania duchow wylaczonych kotwic
     uint8_t failed_attempts;
+    uint8_t poll_sn;
 };
 
 class AppDataManager {
@@ -34,6 +36,7 @@ private:
     void setCalibrationResponse(String res);
     String getCalibrationResponse();
     AppDataManager();
+    
 
     int getActiveUwbAnchorCount() {
         return active_uwb_anchors.size();
@@ -62,7 +65,7 @@ private:
     // 3. FUNKCJE dla espa
     bool isTargetBleDevice(const std::string& mac);
     void updateBleDistance(const std::string& mac, float newDist, float emaAlpha);
-    void updateUwbDistance(uint8_t anchorId, float newDist);
+    void updateUwbDistance(uint8_t anchorId, float newDist, uint8_t poll_sn=0);
 
     // 4. GENERATOR PACZKI DO WYSYŁKI NA TELEFON
     String getAggregatedData();

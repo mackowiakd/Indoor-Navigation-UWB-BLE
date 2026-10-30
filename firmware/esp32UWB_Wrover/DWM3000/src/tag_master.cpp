@@ -196,7 +196,7 @@ void TaskScan(void *pvParameters) {
 // 5. UNIWERSALNA FUNKCJA UWB (TWR - Two Way Ranging)
 // =========================================================================
 
-float executeTWR(uint8_t target_anchor, uint8_t source_anchor) {
+std::pair<float, uint8_t> executeTWR(uint8_t target_anchor, uint8_t source_anchor) {
 
     float received_distance = -1.0; // Domyślnie ustawiamy na -1.0, co oznacza błąd (timeout lub brak odpowiedzi)
     uint32_t status_reg = 0;
@@ -214,23 +214,21 @@ float executeTWR(uint8_t target_anchor, uint8_t source_anchor) {
     dwt_writetxdata(sizeof(tx_poll_msg), tx_poll_msg, 0);
     dwt_writetxfctrl(sizeof(tx_poll_msg), 0, 1); 
 
-    // KRYTYCZNA ZMIANA: Zabezpieczenie przed zawieszeniem!
-    // Ustawiamy, jak długo Tag ma czekać na RESP 
+    // Zabezpieczenie przed zawieszeniem! Ustawiamy, jak długo Tag ma czekać na RESP 
     dwt_setrxaftertxdelay(POLL_TX_TO_RESP_RX_DLY_UUS);
     dwt_setrxtimeout(RESP_RX_TIMEOUT_UUS);
     //sendig POLL and waiting for RESP
     dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED); //in immediate mode it ret alwyas DWT_SUCCESS
-    
     // Czekamy na odpowiedź RESP
     while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) { } //lepiej na petle z watchdogiem (duzy timout ale jednak < infinite loop)
     /*
     uint32_t t0 = millis();
-while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & MASK)) {
-    if (millis() - t0 > 50) {
-        Serial.printf("[TAG][WD] etap RESP, SYS_STATUS=%08lX\n", status_reg);
-        uwbToIdle(); return -1.0f;
+    while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & MASK)) {
+        if (millis() - t0 > 50) {
+            Serial.printf("[TAG][WD] etap RESP, SYS_STATUS=%08lX\n", status_reg);
+            uwbToIdle(); return -1.0f;
+        }
     }
-}
     */
     // POLL received ID z naszej listy urządzeń docelowych (np. POLL do 0x0001)
 
@@ -275,16 +273,15 @@ while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & MASK)) {
         
 
             // Sending FINAL and waiting for REPORT -> also for while(true)
-            if (dwt_starttx(DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED) == DWT_SUCCESS) {
+            dwt_starttx(DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED); // in immediate mode it returns always DWT_SUCCESS
 
-                // >>> now we can print as task for uwb are already launched  <<<
-                Serial.println("[TAG] Poprawne RESP -> Wysłano FINAL.");
-                Serial.println("[TAG] Czekam na REPORT od Kotwicy...");
+            // >>> now we can print as task for uwb are already launched  <<<
+            Serial.println("[TAG] Poprawne RESP -> Wysłano FINAL.");
+            Serial.println("[TAG] Czekam na REPORT od Kotwicy...");
+            
+            // 3. CZEKAMY NA PACZKĘ "REPORT" OD KOTWICY!
+            while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
                 
-                // 3. CZEKAMY NA PACZKĘ "REPORT" OD KOTWICY!
-                while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
-                    
-                };
 
                 if (status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
                 
@@ -304,9 +301,7 @@ while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & MASK)) {
                     //appData.incrementUwbError(target_anchor);
                     Serial.println("[TAG][BŁĄD] TIMEOUT 2: Kotwica nie przysłała paczki REPORT na czas!");
                 }
-            } else {
-                Serial.println("[TAG][BŁĄD] Za wolny procesor! Nie zdążyłem wysłać FINAL w oknie czasowym.");
-            }
+            } 
         } else {
             
             Serial.printf("[TAG] To nie było RESP. Dostałem: %c%c%c ID: %i\n",  rx_buffer[5], rx_buffer[6], rx_buffer[7], rx_buffer[8]);
@@ -316,11 +311,10 @@ while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & MASK)) {
         dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
         Serial.println("[TAG][BŁĄD] TIMEOUT 1: Kotwica nie odpowiedziała na pierwszego POLLa!");
     };
-
-    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK); //tylko flagi odbioru- RX 
    
+    dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_RXFCG_BIT_MASK); //tylko flagi odbioru- RX 
     //uwbReset(); // prob no need but  will clean up for saftey measure 
-    return received_distance; // Zwracamy zmierzoną odległość (lub -1.0 jeśli był błąd)
+    return std::make_pair(received_distance, frame_seq_nb); // Zwracamy zmierzoną odległość (lub -1.0 jeśli był błąd)
 }
 
 //===================================================================================
@@ -408,7 +402,7 @@ void runCalibrationMode() {
     int n = calibList.size();
 
      Serial.println("\n[UWB-CORE1] 🛠 Start trybu autokalibracji...");
-    if (n < 2) {
+    if (n < 2) { // n=2 => 1D calibation
         Serial.println("[UWB-CORE1] ⚠️ Za mało kotwic do kalibracji! Prerywam.");
         isCalibrationCommand = false;
         currentMode = MODE_IDLE;
@@ -424,16 +418,13 @@ void runCalibrationMode() {
             uint8_t anchor1 = calibList[i];
             uint8_t anchor2 = calibList[j];
 
-            // TODO: cal -> anchorI (anchorJ) rn just mock to check logic
             vTaskDelay(pdMS_TO_TICKS(400)); // Symulujemy, że pomiar zajmuje 400ms
 
-            //last (3rd) anchor doesnt exists
+            //last (3rd) anchor doesnt exists || mock data to app needed
             // if(j==n-1){
             //     float mockDistance = 3.0f + (float)i + ((float)j * 0.5f); 
             // }
-        
-            //REAL implem: (after testing)
-        
+
             float dist = executeCalibrationCommand(anchor1, anchor2);
           
             mockResult += String(anchor1, HEX) + "_" + String(anchor2, HEX) + "=" + String(dist, 2) + ";";
@@ -460,6 +451,7 @@ void runCalibrationMode() {
 //  OLD MAIN LOOP fun
 // =========================================================================
 void runNavigationMode() {
+    std::pair<float, uint8_t> result;
      int anchorCount = appData.getActiveUwbAnchorCount();
     
     for (int i = 0; i < anchorCount; i++) {
@@ -468,8 +460,10 @@ void runNavigationMode() {
         Serial.printf("[UWB] -> 0x%04X (t=%lu)\n", target_id, millis());
 
         // CZYSTY STRZAŁ (false = to nie jest kalibracja)
-        float dist = executeTWR(target_id, target_id); 
-        
+        result = executeTWR(target_id, target_id); 
+        float dist = result.first;
+        uint8_t poll_sn = result.second;
+
         if (dist > 0.0 && dist < 100.0) {
             // Wygładzanie odczytów filtrem kinematycznym
             if (i >= filters.size()) {
@@ -480,7 +474,7 @@ void runNavigationMode() {
             float clean_distance;
             if (filters[i].isReadyToReport(clean_distance)) {
                 // TUTAJ AKTUALIZACJA ZMIENNEK DLA BLUETOOTHA!
-                appData.updateUwbDistance(target_id, clean_distance);
+                appData.updateUwbDistance(target_id, clean_distance, poll_sn);
             }
         }
         

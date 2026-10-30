@@ -87,7 +87,7 @@ bool AppDataManager::parseBlePayload(String payload) {
         if (idStr.length() > 0) {
           // strtol automatycznie rozpoznaje "0x" i konwertuje szesnastkowy tekst na czystą liczbę uint8_t
             uint8_t parsedId = (uint8_t)strtol(idStr.c_str(), NULL, 16);
-            active_uwb_anchors.push_back({parsedId, -1.0f, millis(), 0}); // -1.0f oznacza "jeszcze nie zmierzono", 0 failed attempts
+            active_uwb_anchors.push_back({parsedId, -1.0f, millis(), 0, 0}); // -1.0f oznacza "jeszcze nie zmierzono", 0 failed attempts
         }
         uwbStr = uwbStr.substring(commaIndex + 1);
     }
@@ -96,7 +96,7 @@ bool AppDataManager::parseBlePayload(String payload) {
     if (uwbStr.length() > 0) {
         // TUTAJ TEŻ MUSI BYĆ strtol, inaczej wyjdzie 0!
         uint8_t parsedId = (uint8_t)strtol(uwbStr.c_str(), NULL, 16);
-        active_uwb_anchors.push_back({parsedId, -1.0f, millis(), 0});
+        active_uwb_anchors.push_back({parsedId, -1.0f, millis(), 0,0});
     }
 
     // --- PARSOWANIE TAGÓW BLE ---
@@ -149,12 +149,13 @@ void AppDataManager::updateBleDistance(const std::string& mac, float newDist, fl
     }
 }
 /*used by uwb loop()*/
-void AppDataManager::updateUwbDistance(uint8_t anchorId, float newDist) {
+void AppDataManager::updateUwbDistance(uint8_t anchorId, float newDist, uint8_t poll_sn) {
     std::lock_guard<std::mutex> lock(dataMutex);
     for (auto& anchor : active_uwb_anchors) {
         if (anchor.id == anchorId) {
             anchor.distance = newDist;
             anchor.last_seen_ms = millis(); // <--- ZNACZNIK ŻYCIA KOTWICY
+            anchor.poll_sn = poll_sn; // <--- ZNACZNIK NUMERU POLLa
             return;
         }
     }
@@ -175,7 +176,7 @@ String AppDataManager::getAggregatedData() {
             // snprintf JEST BEZPIECZNE - sizeof(hexBuf) fizycznie blokuje wyciek pamięci!
             snprintf(hexBuf, sizeof(hexBuf), "0x%04X", anchor.id);
             
-            payload += "U_" + String(hexBuf) + "=" + String(anchor.distance, 2) + ";";
+            payload += "U_" + String(hexBuf) + "=" + String(anchor.distance, 2) + "@" + String(anchor.poll_sn) + ";";
     
             Serial.printf("0x%04X ", anchor.id);  // %04X oznacza: "Wydrukuj jako HEX (X), użyj 4 znaków (4), brakujące uzupełnij zerami (0)"
         }
