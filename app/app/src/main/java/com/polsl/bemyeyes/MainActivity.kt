@@ -247,38 +247,59 @@ class MainActivity : ComponentActivity() {
 
                         },
                         onStartContinuousLog = {
-                            telemetryLogger.startLogging()
+                            telemetryLogger.startLogging(false )
                             appToEspLogs.add(0, "🔴 Rozpoczęto logowanie ciągłe (bez X, Y)")
                         },
 
                         onStopLogging = {
+                            val fileName = telemetryLogger.currentSessionFile?.name
                             telemetryLogger.stopLogging()
+                            // Wizualne potwierdzenie natychmiast na ekranie (Toast)
+                            Toast.makeText(this, "📁 Zapisano plik: ${fileName ?: "brak pliku"}", Toast.LENGTH_LONG).show()
                             appToEspLogs.add(0, "⏹ Zatrzymano logowanie, plik zapisany")
                         },
                         //onStopLogging -brak
 
                         onLogStaticSample = { refX, refY ->
-                            // 1. Zabezpieczenie: jeśli plik nie jest otwarty, otwieramy go
-                            if (!telemetryLogger.isLogging) telemetryLogger.startLogging()
+                            scope.launch {
+                                // 1. Otwieramy plik dedykowany dla statyki (uwb_static_...)
+                                telemetryLogger.startLogging(isStatic = true)
+                                appToEspLogs.add(0, "⏳ Zbieram serię 10 pomiarów dla X:$refX, Y:$refY...")
 
-                            // 2. Pobieramy zamrożony stan najświeższych odległości z silnika
-                            val snapshotDistance = routingEngine.getCurrentDistancesSnapshot()
-                            val snapshotPoint =routingEngine.getCurrentPositionSnapshot()
+                                var successfulSamples = 0
 
-                            if (snapshotDistance.isEmpty()) {
-                                appToEspLogs.add(0, "⚠️ Brak pomiarów! Upewnij się, że kotwice nadają.")
-                            } else {
-                                // 3. Zapisujemy każdy z pomiarów do pliku, parując go z twardymi współrzędnymi X, Y
-                                snapshotDistance.forEach { (macAddress, distance) ->
-                                    telemetryLogger.logDataRow(
-                                        refX = refX,
-                                        refY = refY,
-                                        measuredDist = distance,
-                                        anchorId = macAddress,
-                                        snapshotPoint
-                                    )
+                                // 2. Pętla zbierająca próbki przez chwilę (np. 10 iteracji co 200ms = 2 sekundy pomiaru)
+                                for (i in 1..10) {
+                                    val snapshotDistance = routingEngine.getCurrentDistancesSnapshot()
+                                    val snapshotPoint = routingEngine.getCurrentPositionSnapshot()
+
+                                    if (snapshotDistance.isNotEmpty()) {
+                                        snapshotDistance.forEach { (macAddress, distance) ->
+                                            telemetryLogger.logDataRow(
+                                                refX = refX,
+                                                refY = refY,
+                                                measuredDist = distance,
+                                                anchorId = macAddress,
+                                                calculatedPose = snapshotPoint
+                                            )
+                                        }
+                                        successfulSamples++
+                                    }
+
+                                    // Czekamy chwilę, aż układ UWB wypluje kolejną, świeżą paczkę danych
+                                    kotlinx.coroutines.delay(200)
                                 }
-                                appToEspLogs.add(0, "✅ Zapisano próbkę dla X:$refX, Y:$refY (ilość kotwic: ${snapshotDistance.size})")
+
+                                // 3. Zamykamy plik po zebraniu całej serii
+                                telemetryLogger.stopLogging()
+
+                                if (successfulSamples > 0) {
+                                    appToEspLogs.add(0, "✅ Zapisano serię ($successfulSamples paczek) dla X:$refX, Y:$refY")
+                                    Toast.makeText(this@MainActivity, "📁 Zapisano serię pomiarów statycznych!", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    appToEspLogs.add(0, "⚠️ Brak sygnału UWB podczas próby dla X:$refX, Y:$refY")
+                                    Toast.makeText(this@MainActivity, "⚠️ Brak danych z kotwic!", Toast.LENGTH_SHORT).show()
+                                }
                             }
                         }
 

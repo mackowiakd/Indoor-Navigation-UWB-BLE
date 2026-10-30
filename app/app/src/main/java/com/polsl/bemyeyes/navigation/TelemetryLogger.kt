@@ -35,14 +35,14 @@ class TelemetryLogger(private val context: Context) {
 
     var currentSessionFile: File? = null
 
-    fun startLogging() {
+    fun startLogging(isStatic: Boolean) {
         if (isLogging) return
         isLogging = true
 
         // 2. Tworzenie unikalnego pliku dla danej sesji
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-        val fileName = "uwb_telemetry_$timestamp.csv"
-
+        val prefix = if (isStatic) "uwb_static" else "uwb_continuous"
+        val fileName = "${prefix}_telemetry_$timestamp.csv"
         // Zapis do bezpiecznego folderu aplikacji: Android/data/com.polsl.bemyeyes/files/
         val file = File(context.getExternalFilesDir(null), fileName)
         currentSessionFile = file
@@ -51,7 +51,7 @@ class TelemetryLogger(private val context: Context) {
         logJob = scope.launch {
             BufferedWriter(FileWriter(file, true)).use { writer ->
                 // Zrzut nagłówka CSV
-                writer.write("Timestamp_ms,Ref_X,Ref_Y,Ref_X,Measured_X,Measured_Y,Measured_Distance_m,Anchor_ID,RSSI_FP_PWR\n")
+                writer.write("Timestamp_ms,Ref_X,Ref_Y,Cal_X,Cal_Y,Measured_Distance_m,Anchor_ID\n")
                 writer.flush()
 
                 for (entry in logChannel) {
@@ -60,6 +60,7 @@ class TelemetryLogger(private val context: Context) {
                     val xCal = entry.calX?.toString() ?: ""
                     val yCal = entry.calY?.toString() ?: ""
                     writer.write("${entry.timestampMs},$xStr,$yStr,$xCal,$yCal,${entry.measuredDistanceMeters},${entry.anchorId}\n")
+                    writer.flush()
                 }
             }
         }
@@ -67,7 +68,7 @@ class TelemetryLogger(private val context: Context) {
 
     // 4. Główne API dla NavigationRou
     // Continuous mvm test(refX, refY = null) LUB ręcznie dla próbki statycznej
-    fun logDataRow(refX: Double?, refY: Double?, measuredDist: Double, anchorId: String, calulatedPos: Pair<Double,Double>,) {
+    fun logDataRow(refX: Double?, refY: Double?, measuredDist: Double, anchorId: String, calculatedPose: Pair<Double,Double>) {
         if (!isLogging) return
 
 
@@ -75,8 +76,8 @@ class TelemetryLogger(private val context: Context) {
             timestampMs = System.currentTimeMillis(),
             refX = refX,
             refY = refY,
-            calX=calulatedPos.first,
-            calY=calulatedPos.second,
+            calX=calculatedPose.first,
+            calY=calculatedPose.second,
             //calX and calY must come from fun called in NavigationEninge
             measuredDistanceMeters = measuredDist,
             anchorId = anchorId
@@ -87,7 +88,9 @@ class TelemetryLogger(private val context: Context) {
 
 
     fun stopLogging() {
+        if (!isLogging) return
         isLogging = false
+        logChannel.close() // Eleganckie zamknięcie kanału i zrzut bufora
         logJob?.cancel() // Zamyka bezpiecznie strumień zapisu
     }
 }
