@@ -29,6 +29,7 @@ class BleConnectionManager(
     //  Callback  dla wyników kalibracji
     var onCalibrationResultReceived: ((String) -> Unit)? = null
     // Odpowiednik statycznych zmiennych z Javy (w Kotlinie trzymane w companion object)
+
     companion object {
         private const val TAG = "BLE_COMM"
 
@@ -142,10 +143,11 @@ class BleConnectionManager(
                 if (record.isBlank()) continue
                 var id = ""
                 var dist: Double? = null
+                var seq: Int?=null
 
                 // PARSOWANIE DANYCH ZESP32 (Format: KLUCZ=WARTOŚĆ)
                 if (record.startsWith("U_")) {
-                    // record to np. "U_1=2.45" lub "U_11=2.45"
+                    // record to U_0x0001=2.45@17;
                     // substringBefore("=") da nam "U_1", a substringAfter("U_") wyciągnie czyste ID: "1" lub "11"
                     // 1. Wyciągamy surowe ID z tekstu od ESP32 (np. "1", "10", "15")
                     val rawId = record.substringBefore("=").substringAfter("U_").trim()
@@ -160,7 +162,10 @@ class BleConnectionManager(
                     } else {
                         rawId // Na wypadek gdyby ESP32 wysłało już gotowy format, zostawiamy bez zmian
                     }
-                    dist = record.substringAfter("=").toDoubleOrNull()
+                    val value = record.substringAfter("=")
+                    dist = value.substringBefore("@").toDoubleOrNull()
+                    seq = value.substringAfter("@", "").toIntOrNull()
+
 
                 } else if (record.startsWith("B_")) {
                     // record to np. "B_ff:ff:12:b1:64:d1=1.50"
@@ -189,7 +194,7 @@ class BleConnectionManager(
 
                         // 3. Wywołujemy główny wątek UI, aby wyświetlić pozycję na ekranie
                             android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                routingEngine.processNewTelemetryData(id, dist)
+                                routingEngine.processNewTelemetryData(id, dist, seq)
 
                         }
                     }
@@ -199,8 +204,6 @@ class BleConnectionManager(
                 else {
                     postLog("no dist data $id: $payload")
                 }
-
-
 
             }
         } catch (e: Exception) {

@@ -270,6 +270,7 @@ class MainActivity : ComponentActivity() {
 
                                 // 2. Pętla zbierająca próbki przez chwilę (np. 10 iteracji co 200ms = 2 sekundy pomiaru)
                                 for (i in 1..10) {
+                                    //distance will be deliv by clallback => we log only if recieve new
                                     val snapshotDistance = routingEngine.getCurrentDistancesSnapshot()
                                     val snapshotPoint = routingEngine.getCurrentPositionSnapshot()
 
