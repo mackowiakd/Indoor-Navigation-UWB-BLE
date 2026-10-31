@@ -221,15 +221,13 @@ std::pair<float, uint8_t> executeTWR(uint8_t target_anchor, uint8_t source_ancho
     dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED); //in immediate mode it ret alwyas DWT_SUCCESS
     // Czekamy na odpowiedź RESP
     while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) { } //lepiej na petle z watchdogiem (duzy timout ale jednak < infinite loop)
-    /*
-    uint32_t t0 = millis();
+    /* <=> uint32_t t0 = millis();
     while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & MASK)) {
         if (millis() - t0 > 50) {
             Serial.printf("[TAG][WD] etap RESP, SYS_STATUS=%08lX\n", status_reg);
             uwbToIdle(); return -1.0f;
         }
-    }
-    */
+    } */
     // POLL received ID z naszej listy urządzeń docelowych (np. POLL do 0x0001)
 
     if (status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
@@ -273,15 +271,15 @@ std::pair<float, uint8_t> executeTWR(uint8_t target_anchor, uint8_t source_ancho
         
 
             // Sending FINAL and waiting for REPORT -> also for while(true)
-            dwt_starttx(DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED); // in immediate mode it returns always DWT_SUCCESS
-
-            // >>> now we can print as task for uwb are already launched  <<<
-            Serial.println("[TAG] Poprawne RESP -> Wysłano FINAL.");
-            Serial.println("[TAG] Czekam na REPORT od Kotwicy...");
-            
-            // 3. CZEKAMY NA PACZKĘ "REPORT" OD KOTWICY!
-            while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {
+            if(dwt_starttx(DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED) == DWT_SUCCESS) { //delayed has actual ret value we must check
+               
+                // >>> now we can print as task for uwb are already launched  <<<
+                Serial.println("[TAG] Poprawne RESP -> Wysłano FINAL.");
+                Serial.println("[TAG] Czekam na REPORT od Kotwicy...");
                 
+                // 3. CZEKAMY NA PACZKĘ "REPORT" OD KOTWICY!
+                while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR))) {};
+                    
 
                 if (status_reg & SYS_STATUS_RXFCG_BIT_MASK) {
                 
@@ -291,18 +289,25 @@ std::pair<float, uint8_t> executeTWR(uint8_t target_anchor, uint8_t source_ancho
                     rx_buffer[ALL_MSG_SN_IDX] = 0;
 
                     // Czy to jest REPORT?
-                   if (rx_buffer[CMD_IDX] == 'R' && rx_buffer[CMD_IDX+1] == 'E' && rx_buffer[CMD_IDX+2] == 'P' && rx_buffer[DEST_IDX] == TAG_ID) {
+                    if (rx_buffer[CMD_IDX] == 'R' && rx_buffer[CMD_IDX+1] == 'E' && rx_buffer[CMD_IDX+2] == 'P' && rx_buffer[DEST_IDX] == TAG_ID) {
                         Serial.println("[TAG] Odebrano REPORT od Kotwicy! Rozpakowuję...");
                         memcpy(&received_distance, &rx_buffer[REPORT_MSG_DIST_IDX], sizeof(float));
-                      
+                    
                     }
-                } else {
+                    
+                } 
+                else {
                     dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
                     //appData.incrementUwbError(target_anchor);
                     Serial.println("[TAG][BŁĄD] TIMEOUT 2: Kotwica nie przysłała paczki REPORT na czas!");
                 }
             } 
-        } else {
+            else {
+            Serial.println("[TAG][BŁĄD] Za wolny procesor! Nie zdążyłem wysłać FINAL w oknie czasowym.");
+            } 
+
+        }
+         else {
             
             Serial.printf("[TAG] To nie było RESP. Dostałem: %c%c%c ID: %i\n",  rx_buffer[5], rx_buffer[6], rx_buffer[7], rx_buffer[8]);
         
@@ -452,7 +457,7 @@ void runCalibrationMode() {
 // =========================================================================
 void runNavigationMode() {
     std::pair<float, uint8_t> result;
-     int anchorCount = appData.getActiveUwbAnchorCount();
+    int anchorCount = appData.getActiveUwbAnchorCount();
     
     for (int i = 0; i < anchorCount; i++) {
         uint8_t target_id = appData.getUwbAnchorId(i);
