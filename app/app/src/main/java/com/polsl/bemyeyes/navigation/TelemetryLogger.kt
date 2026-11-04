@@ -36,7 +36,7 @@ class TelemetryLogger(private val context: Context) {
     var currentSessionFile: File? = null
 
     fun startLogging(isStatic: Boolean) {
-        if (isLogging) return
+        if (isLogging) return // jesli juz logujemy -> nic nie rob
         isLogging = true
 
         // 2. Tworzenie unikalnego pliku dla danej sesji
@@ -91,6 +91,6 @@ class TelemetryLogger(private val context: Context) {
         if (!isLogging) return
         isLogging = false
         logChannel.close() // Eleganckie zamknięcie kanału i zrzut bufora
-        logJob?.cancel() // Zamyka bezpiecznie strumień zapisu
+
     }
 }

@@ -125,6 +125,13 @@ class NavigationRoutingEngine(
             }
         }
     }
+    private fun resetZoneState() {
+        latestAnchorDistances.clear()
+        lastSeq.clear()
+        previousX = null; previousY = null
+        vLength = 0.0; moveDx = 0.0; moveDy = 0.0
+        announcedPoisInStep.clear()
+    }
 
     /** RAZ na każdą nową pozycję, w processNewTelemetryData po bramce seq. */
     private fun updateHeading(x: Double, y: Double) {
@@ -183,6 +190,11 @@ class NavigationRoutingEngine(
                         //  ZABEZPIECZENIE PRZED SPAMOWANIEM TTS
                         announcedPoisInStep.add(target.associatedMac ?: "")
                     }
+                    if(relPos.forwardDistance<0){
+                        speechService.announceBackground(" ${target.name} za Tobą")
+                        //  ZABEZPIECZENIE PRZED SPAMOWANIEM TTS
+                        announcedPoisInStep.add(target.associatedMac ?: "")
+                    }
                      // Przerywamy dalszą analizę (lewo/prawo) dla tego obiektu, bo już o nim powiedzieliśmy
                     continue
                 }
@@ -192,7 +204,7 @@ class NavigationRoutingEngine(
             } else {
                 // Gdy użytkownik oddali się od obiektu, usuwamy go z listy ogłoszonych,
                 // żeby system mógł go ogłosić, gdy użytkownik będzie wracał korytarzem
-                if (relPos.forwardDistance < -1.0 || relPos.lateralDistance > 5.0) {
+                if (relPos.forwardDistance < -1.5 || relPos.lateralDistance > 5.0) {
                     announcedPoisInStep.remove(target.associatedMac)
                 }
             }
@@ -221,7 +233,6 @@ class NavigationRoutingEngine(
             if(currentLocationId == null){
                 // Zwracamy listę nowych urządzeń OD RAZU (pierwsze uruchomienie)
                 currentLocationId = scannedDev.locationId
-                latestAnchorDistances.clear()
                 println("nowa LOKALIZACJI : $currentLocationId")
                 //zapis czasu na kolejne pomiary
                 lastTransitionTime = currentTime
@@ -243,6 +254,7 @@ class NavigationRoutingEngine(
 
             lastTransitionTime = currentTime
             currentLocationId = scannedDev.locationId
+            resetZoneState()
             // 🔥 KRZYCZYMY DO MAIN ACTIVITY:
             onLocationChanged?.invoke(currentLocationId!!)
             return buildingTopologyDB.getDevicesForLocation(currentLocationId!!)
@@ -261,7 +273,9 @@ class NavigationRoutingEngine(
         var myPosition :  Pair<Double, Double>? = null
         // 1. Zidentyfikuj, co usłyszało ESP32
         val detectedDevice = buildingTopologyDB.getDeviceByMac(macAddress) ?: return
-        if (seq != null) { if (lastSeq[detectedDevice.macAddress] == seq) return;
+        if (seq != null) {
+            if (lastSeq[detectedDevice.macAddress] == seq)
+                return;
         lastSeq[detectedDevice.macAddress] = seq }
 
         //pozycjonowanie
@@ -281,7 +295,7 @@ class NavigationRoutingEngine(
                 val strategy: PositioningStrategy = if (points.size == 2) {
                     TwoAnchorCorridorPositioningStrategy() // Uruchomi się podczas Twoich testów 1D
                 } else  {
-                    TrilaterationStrategy() // Uruchomi się domyślnie, gdy dokupisz trzecią kotwicę
+                    LeastSquaresStrategy() // anchors >2
                 }
 
                myPosition = strategy.calculatePosition(points) // send to map ploting
@@ -297,7 +311,7 @@ class NavigationRoutingEngine(
                         measuredDist = distanceOrRssi,
                         anchorId = macAddress,
                         calculatedPose  = Pair(CurrentX,CurrentY)
-                        //add fram_seq numb
+
                     )
                 }
             }
