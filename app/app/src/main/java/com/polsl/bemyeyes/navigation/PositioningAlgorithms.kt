@@ -1,6 +1,7 @@
 package com.polsl.bemyeyes.navigation
 
 import kotlin.math.abs
+import kotlin.math.hypot
 
 
 // =========================================================
@@ -13,6 +14,56 @@ data class RangedPoint(val x: Double, val y: Double, val distance: Double)
 interface PositioningStrategy {
     fun calculatePosition(points: List<RangedPoint>): Pair<Double, Double>?
 }
+
+/**
+ * Uniwersalna, nieliniowa Metoda Najmniejszych Kwadratów (Gauss-Newton).
+ * Obsługuje 3, 4, 5 lub dowolną liczbę N kotwic bez modyfikacji kodu!
+ */
+class LeastSquaresStrategy(private val iterations: Int = 5) : PositioningStrategy {
+    override fun calculatePosition(points: List<RangedPoint>): Pair<Double, Double>? {
+        if (points.size < 3) return null
+
+        // Punkt startowy: środek ciężkości (centroid) kotwic lub średnia
+        var x = points.map { it.x }.average()
+        var y = points.map { it.y }.average()
+
+        repeat(iterations) {
+            var a = 0.0
+            var b = 0.0
+            var c = 0.0
+            var g0 = 0.0
+            var g1 = 0.0
+
+            for (p in points) {
+                val dx = x - p.x
+                val dy = y - p.y
+                val rho = hypot(dx, dy).coerceAtLeast(1e-6) // zabezpieczenie przed div-by-zero
+
+                // Elementy macierzi Jacobiana
+                val jx = dx / rho
+                val jy = dy / rho
+                val res = rho - p.distance // residuum (różnica między obliczonym a zmierzonym dystansem)
+
+                a += jx * jx
+                b += jx * jy
+                c += jy * jy
+                g0 += jx * res
+                g1 += jy * res
+            }
+
+            val det = a * c - b * b
+            if (abs(det) < 1e-6) return null // Układ osobliwy
+
+            // Poprawka Gaussa-Newtona
+            x -= (c * g0 - b * g1) / det
+            y -= (-b * g0 + a * g1) / det
+        }
+
+        return Pair(x, y)
+    }
+}
+
+//ad for n==3 as Least squares for 3 anchors work way worse
 
 class TrilaterationStrategy : PositioningStrategy {
     override fun calculatePosition(points: List<RangedPoint>): Pair<Double, Double>? {
