@@ -246,6 +246,13 @@ class MainActivity : ComponentActivity() {
                         autoCalibrationEngine.startTagCalibration(tag, zoneAnchors)
 
                         },
+                        // 🔥 NOWOŚĆ: Obsługa zmiany algorytmu z panelu admina
+                        onAlgorithmChanged = { useLS ->
+                            routingEngine.useLeastSquares = useLS
+                            routingEngine.resetMovementHistory()
+                            val algoName = if (useLS) "Least Squares (LS)" else "Zwykła Trilateracja"
+                            appToEspLogs.add(0, "⚙️ [ADMIN] Zmieniono algorytm pozycjonowania na: $algoName")
+                        },
                         onStartContinuousLog = {
                             telemetryLogger.startLogging(false )
                             appToEspLogs.add(0, "🔴 Rozpoczęto logowanie ciągłe (bez X, Y)")
@@ -383,6 +390,7 @@ fun NavigationScreen(
     userPosition: Pair<Double, Double>?,
     onStartContinuousLog: () -> Unit,
     onStopLogging: () -> Unit,
+    onAlgorithmChanged: (Boolean) -> Unit,
     onLogStaticSample: (Double, Double) -> Unit
 ) {
 
@@ -393,6 +401,8 @@ fun NavigationScreen(
     var refYInput by remember { mutableStateOf("") }
     var isContinuousLogging by remember { mutableStateOf(false) }
 
+    // 🔥 NOWOŚĆ: Stan przełącznika algorytmu w UI (domyślnie włączone LS)
+    var isLeastSquaresEnabled by remember { mutableStateOf(true) }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -486,7 +496,7 @@ fun NavigationScreen(
         // ==========================================================
         // PANEL ADMINA: Przycisk Auto-Kalibracji - zamiast tego  PRZYCISK ROZWIJANIA PANELU ---
         // ==========================================================
-      //TODO callbacki do zapisu onLogStaticSample(x, y) i logDataRow(..)
+
         Button(
             onClick = { isDevPanelExpanded = !isDevPanelExpanded },
             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -494,13 +504,7 @@ fun NavigationScreen(
         ) {
             Text(if (isDevPanelExpanded) "Ukryj Panel Dewelopera" else "⚙️ Pokaż Panel Dewelopera")
         }
-//        Button(
-//            onClick = { onCalibrateZoneClick(currentLocation) },
-//            modifier = Modifier.fillMaxWidth().height(40.dp),
-//            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
-//        ) {
-//            Text("🔧 ADMIN: Autokalibruj obecną strefę")
-//        }
+
         // --- ZAWARTOŚĆ PANELU ---
         if (isDevPanelExpanded) {
             Card(
@@ -510,6 +514,31 @@ fun NavigationScreen(
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("Narzędzia Testowe", color = Color.White, style = MaterialTheme.typography.titleMedium)
                     Spacer(modifier = Modifier.height(12.dp))
+                    // 🔥 NOWOŚĆ: BINARY SWITCH DLA WYBORU ALGORYTMU POZYCJONOWANIA
+                    Text("Algorytm pozycjonowania (dla >=3 kotwic):", color = Color.LightGray, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = if (isLeastSquaresEnabled) "Metoda Najmniejszych Kwadratów (LS)" else "Zwykła Trilateracja",
+                            color = Color.White,
+                            fontSize = 14.sp
+                        )
+                        Switch(
+                            checked = isLeastSquaresEnabled,
+                            onCheckedChange = { isChecked ->
+                                isLeastSquaresEnabled = isChecked
+                                onAlgorithmChanged(isChecked)
+                            }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Divider(color = Color.Gray)
+                    Spacer(modifier = Modifier.height(4.dp))
 
                     // 1. ZARZĄDZANIE KALIBRACJĄ
                     Button(
@@ -648,7 +677,7 @@ fun NavigationScreen(
 
         //  KONSOLA: APP -> ESP / DATABASE 🔥
         Card(
-            modifier = Modifier.fillMaxWidth().height(200.dp),
+            modifier = Modifier.fillMaxWidth().height(250.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
         ) {
             Column(modifier = Modifier.padding(8.dp)) {

@@ -49,6 +49,56 @@ class ThreeAnchorTrigonometryStrategy : CalibrationStrategy {
         return listOf(updatedA1, updatedA2, updatedA3)
     }
 }
+// 3. Implementacja dla 3 lub więcej kotwic (Wykorzystuje Least Squares / Gaussa-Newtona)
+class MultiAnchorLeastSquaresCalibrationStrategy : CalibrationStrategy {
+    override fun calibrate(distanceMatrix: Array<DoubleArray>, anchors: List<IoTDevice>): List<IoTDevice> {
+        val n = anchors.size
+        if (n < 3) throw IllegalArgumentException("Wymagane co najmniej 3 kotwice!")
+
+        val updatedAnchors = mutableListOf<IoTDevice>()
+
+        // 1. Kotwica 0 w punkcie (0, 0)
+        updatedAnchors.add(anchors[0].copy(globalX = 0.0, globalY = 0.0))
+
+        // 2. Kotwica 1 na osi X w odległości d01
+        val d01 = distanceMatrix[0][1]
+        if (d01 < 0.1) throw IllegalStateException("Zbyt mała odległość między kotwicą 0 i 1 ($d01 m)")
+        updatedAnchors.add(anchors[1].copy(globalX = d01, globalY = 0.0))
+
+        // 3. Kotwica 2 wyznaczana trygonometrycznie z trójkąta (0, 1, 2)
+        val d02 = distanceMatrix[0][2]
+        val d12 = distanceMatrix[1][2]
+        val x2 = (d01 * d01 + d02 * d02 - d12 * d12) / (2 * d01)
+        val y2 = kotlin.math.sqrt(kotlin.math.max(0.0, d02 * d02 - x2 * x2))
+        updatedAnchors.add(anchors[2].copy(globalX = x2, globalY = y2))
+
+        // 4. Dla każdej kolejnej kotwicy (i >= 3) używamy Least Squares względem wszystkich poprzednich
+        val lsStrategy = LeastSquaresStrategy(iterations = 10)
+
+        for (i in 3 until n) {
+            val rangedPoints = mutableListOf<RangedPoint>()
+            for (j in 0 until i) {
+                val prevAnchor = updatedAnchors[j]
+                val measuredDist = distanceMatrix[i][j]
+                if (prevAnchor.globalX != null && prevAnchor.globalY != null && measuredDist > 0.0) {
+                    rangedPoints.add(RangedPoint(prevAnchor.globalX, prevAnchor.globalY, measuredDist))
+                }
+            }
+
+            // Odpalamy algorytm LS z PositionAlgorithms.kt dla nowej kotwicy
+            val calculatedPos = lsStrategy.calculatePosition(rangedPoints)
+
+            if (calculatedPos != null) {
+                updatedAnchors.add(anchors[i].copy(globalX = calculatedPos.first, globalY = calculatedPos.second))
+            } else {
+                // Awaryjny fallback, gdyby macierz była osobliwa
+                updatedAnchors.add(anchors[i].copy(globalX = 0.0, globalY = 0.0))
+            }
+        }
+
+        return updatedAnchors
+    }
+}
 
 // 4. GŁÓWNY SILNIK (Zarządca)
 class AutoCalibrationEngine {
@@ -95,11 +145,11 @@ class AutoCalibrationEngine {
             if (points.size >= 2) {
                 isCalibratingTag = false // Mamy sukces, wyłączamy nasłuch
 
-                // 🔥 DYNAMICZNY WYBÓR ALGORYTMU 🔥
+                //  DYNAMICZNY WYBÓR ALGORYTMU
                 val strategy: PositioningStrategy = if (points.size == 2) {
                     TwoAnchorCorridorPositioningStrategy() // Uruchomi się podczas Twoich testów 1D
                 } else  {
-                    TrilaterationStrategy() // Uruchomi się domyślnie, gdy dokupisz trzecią kotwicę
+                    LeastSquaresStrategy() //n>=3
                 }
 
                 val position = strategy.calculatePosition(points)
@@ -124,10 +174,10 @@ class AutoCalibrationEngine {
         val anchorCount = anchors.size
 
         // System SAM decyduje, jakiej matematyki użyć
-        val strategy: CalibrationStrategy = when (anchorCount) {
-            2 -> TwoAnchorCorridorStrategy()
-            3 -> ThreeAnchorTrigonometryStrategy()
-            in 4..10 -> throw NotImplementedError("Pełny algorytm MDS pozostawiony na przyszłość")
+        val strategy: CalibrationStrategy = when {
+            anchorCount == 2 -> TwoAnchorCorridorStrategy()
+            anchorCount == 3 -> ThreeAnchorTrigonometryStrategy()
+            anchorCount > 3 -> MultiAnchorLeastSquaresCalibrationStrategy()
             else -> throw IllegalArgumentException("Nieobsługiwana liczba kotwic: $anchorCount")
         }
 
