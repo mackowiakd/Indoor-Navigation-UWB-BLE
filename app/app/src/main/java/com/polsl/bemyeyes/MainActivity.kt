@@ -72,6 +72,9 @@ class MainActivity : ComponentActivity() {
                 userPositionState.value = Pair(x, y)
             }
         }
+        routingEngine.onTargetReached = {
+            runOnUiThread { currentTargetNameState.value = "Brak celu (Wybierz coś z listy)" }
+        }
 
         bleManager = BleConnectionManager(routingEngine, autoCalibrationEngine) { nowaWiadomosc ->
             // Upewniamy się, że modyfikujemy interfejs w głównym wątku
@@ -176,15 +179,8 @@ class MainActivity : ComponentActivity() {
 
                             routingEngine.setNavigationTarget(target)
                             currentTargetNameState.value = target.name
-                            if (target.associatedMac != null) {
-                                debugLogs.add(0, "🎯 Tryb Precyzyjny: Szukam ${target.name}")
-                                val singleDevice = listOfNotNull(topologyDatabase.getDeviceByMac(target.associatedMac))
-                                bleManager.sendFilterToEsp(singleDevice)
-                            } else {
-                                debugLogs.add(0, "📍 Tryb Eksploracji: Kieruj do ${target.name}")
-                                val areaDevices = topologyDatabase.getDevicesForLocation(target.locationId)
-                                bleManager.sendFilterToEsp(areaDevices)
-                            }
+                            debugLogs.add(0, if (target.isMacroTarget) "📍 Makro: ${target.name}" else "🎯 Mikro: ${target.name}")
+                            // filtra NIE ruszamy – zależy od strefy, nie od celu
                         },
                         onConnect = { // <--- TUTAJ PODPINAMY BLE!
                             startBleServices()

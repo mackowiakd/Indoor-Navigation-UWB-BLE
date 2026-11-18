@@ -14,7 +14,7 @@ class NavigationRoutingEngine(
     private val speechService: AccessibilitySpeechService, // Upewnij się, że ta klasa istnieje
     private val telemetryLogger: TelemetryLogger,
     private val onLocationChanged: ((Int) -> Unit)? = null //callback o zmienie locationID
-
+//arg wich positioning algo?
 ) {
 
     // 1. STANY SILNIKA NAWIGACJI
@@ -59,6 +59,8 @@ class NavigationRoutingEngine(
     private val lastAnnouncedTimeMap = mutableMapOf<String, Long>()
     private val COOLDOWN_TIME_MS = 10000L // 10 sekund blokady
     private val lastSeq = HashMap<String, Int>() //analiza nr pakietow sek uwb (new?)
+    var useLeastSquares: Boolean = true
+    var onTargetReached: (() -> Unit)? = null
 
 
 
@@ -86,6 +88,9 @@ class NavigationRoutingEngine(
     fun resetMovementHistory() {
         previousX = null
         previousY = null
+        vLength = 0.0
+        moveDx = 0.0
+        moveDy = 0.0
         announcedPoisInStep.clear()
         latestAnchorDistances.clear()
     }
@@ -152,11 +157,19 @@ class NavigationRoutingEngine(
 
 
     }
+    private fun checkMacroArrival() {
+        val t = currentTarget ?: return
+        if (t.isMacroTarget && t.locationId == currentLocationId) {
+            speechService.announceImportant("Jesteś w strefie: ${t.name}. Wybierz teraz dokładny cel z listy.")
+            currentTarget = null
+            watchdogJob?.cancel()
+            onTargetReached?.invoke() // żeby UI zdjęło nazwę celu
+        }
+    }
     // =============================================================
     // Analiza iloczynu wektorowego pod kątem lewej/prawej strony
     //==========================================================
     private fun evaluatePassingObjects2D(currentX: Double, currentY: Double) {
-
 
 
         // Filtrowanie szumu: jeśli użytkownik stoi w miejscu, nie wyliczamy kierunku
@@ -238,6 +251,7 @@ class NavigationRoutingEngine(
                 lastTransitionTime = currentTime
 
                 onLocationChanged?.invoke(currentLocationId!!) //CALLBACK DLA COLD STARTU!
+                checkMacroArrival()
                 return buildingTopologyDB.getDevicesForLocation(currentLocationId!!)
             }
 
@@ -255,8 +269,8 @@ class NavigationRoutingEngine(
             lastTransitionTime = currentTime
             currentLocationId = scannedDev.locationId
             resetZoneState()
-            // 🔥 KRZYCZYMY DO MAIN ACTIVITY:
             onLocationChanged?.invoke(currentLocationId!!)
+            checkMacroArrival()
             return buildingTopologyDB.getDevicesForLocation(currentLocationId!!)
 
         }
@@ -295,7 +309,11 @@ class NavigationRoutingEngine(
                 val strategy: PositioningStrategy = if (points.size == 2) {
                     TwoAnchorCorridorPositioningStrategy() // Uruchomi się podczas Twoich testów 1D
                 } else  {
-                    LeastSquaresStrategy() // anchors >2
+                    if (useLeastSquares) {
+                        LeastSquaresStrategy()
+                    } else {
+                        TrilaterationStrategy() // Klasyczna trilateracja geometryczna (upewnij się, że klasa tak się nazywa lub użyj swojej nazwy)
+                    }
                 }
 
                myPosition = strategy.calculatePosition(points) // send to map ploting
